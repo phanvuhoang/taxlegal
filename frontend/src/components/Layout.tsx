@@ -2,7 +2,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { clearAuth, getUser } from "../lib/auth";
 import {
   LayoutDashboard, FileText, BookOpen, Settings,
-  LogOut, Shield, FlaskConical, Scale
+  LogOut, Shield, FlaskConical, Scale, Search,
+  MessageSquare, FolderOpen, Globe
 } from "lucide-react";
 
 const navItems = [
@@ -12,10 +13,17 @@ const navItems = [
   { href: "/laws", icon: Scale, label: "Văn Bản Luật" },
 ];
 
+const legalAgentItems = [
+  { href: "/legal-search", icon: Search, label: "Tra cứu Luật" },
+  { href: "/legal-chat", icon: MessageSquare, label: "Tư vấn AI" },
+  { href: "/legal-documents", icon: FolderOpen, label: "Tài liệu" },
+];
+
 const adminItems = [
   { href: "/admin", icon: Settings, label: "Admin" },
   { href: "/admin/users", icon: Shield, label: "Users" },
   { href: "/admin/autotest", icon: FlaskConical, label: "AutoTest" },
+  { href: "/admin/crawler", icon: Globe, label: "Crawler Văn bản" },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -51,6 +59,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Nav */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map(({ href, icon: Icon, label }) => (
+            <Link
+              key={href}
+              to={href}
+              className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isActive(href)
+                  ? "bg-primary-50 text-primary-600"
+                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+              }`}
+            >
+              <Icon className={`w-4 h-4 ${isActive(href) ? "text-primary-500" : "text-gray-400"}`} />
+              {label}
+            </Link>
+          ))}
+
+          {/* Legal Agent section */}
+          <div className="pt-3 pb-1">
+            <p className="px-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Legal AI</p>
+          </div>
+          {legalAgentItems.map(({ href, icon: Icon, label }) => (
             <Link
               key={href}
               to={href}

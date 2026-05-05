@@ -11,6 +11,10 @@ import AdminUsers from "./pages/AdminUsers";
 import AdminAutotest from "./pages/AdminAutotest";
 import SampleAdvices from "./pages/SampleAdvices";
 import Laws from "./pages/Laws";
+import LegalSearch from "./pages/LegalSearch";
+import LegalChat from "./pages/LegalChat";
+import LegalDocuments from "./pages/LegalDocuments";
+import AdminCrawler from "./pages/AdminCrawler";
 import { getUser } from "./lib/auth";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -44,9 +48,13 @@ export default function App() {
         <Route path="/matters/:id" element={<RequireAuth><MatterDetail /></RequireAuth>} />
         <Route path="/sample-advices" element={<RequireAuth><SampleAdvices /></RequireAuth>} />
         <Route path="/laws" element={<RequireAuth><Laws /></RequireAuth>} />
+        <Route path="/legal-search" element={<RequireAuth><LegalSearch /></RequireAuth>} />
+        <Route path="/legal-chat" element={<RequireAuth><LegalChat /></RequireAuth>} />
+        <Route path="/legal-documents" element={<RequireAuth><LegalDocuments /></RequireAuth>} />
         <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/autotest" element={<RequireAdmin><AdminAutotest /></RequireAdmin>} />
+        <Route path="/admin/crawler" element={<RequireAdmin><AdminCrawler /></RequireAdmin>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

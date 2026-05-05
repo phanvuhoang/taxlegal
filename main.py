@@ -15,6 +15,14 @@ from backend.routes.admin import router as admin_router
 from backend.routes.laws import router as laws_router
 from backend.config import APP_PORT
 
+# Legal Agent module
+from backend.legalai.routes import search as legalai_search
+from backend.legalai.routes import chat as legalai_chat
+from backend.legalai.routes import documents as legalai_documents
+from backend.legalai.routes import crawler as legalai_crawler
+from backend.legalai.routes import laws as legalai_laws
+from backend.legalai.startup import run_legalai_startup
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
@@ -26,6 +34,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting TaxLegal AI...")
     await run_startup()
+    await run_legalai_startup()
     logger.info("Startup complete.")
     yield
     logger.info("Shutting down TaxLegal AI...")
@@ -51,6 +60,13 @@ app.include_router(auth_router)
 app.include_router(matters_router)
 app.include_router(admin_router)
 app.include_router(laws_router)
+
+# Legal Agent module routes
+app.include_router(legalai_search.router)
+app.include_router(legalai_chat.router)
+app.include_router(legalai_documents.router)
+app.include_router(legalai_crawler.router)
+app.include_router(legalai_laws.router)
 
 
 @app.get("/api/health")
