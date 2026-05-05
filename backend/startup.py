@@ -1,18 +1,56 @@
 """
-Startup tasks: create schema, seed admin user, seed agent settings.
+Startup tasks: create database (if needed), schema, seed admin user, seed agent settings.
 Called from main.py lifespan.
 """
 import asyncio
 import logging
 from pathlib import Path
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from backend.database import engine, AsyncSessionLocal
 from backend.models import Base, User, AgentSetting
 from backend.auth import hash_password
-from backend.config import ADMIN_EMAIL, ADMIN_PASSWORD, DEFAULT_AGENT_MODELS
+from backend.config import ADMIN_EMAIL, ADMIN_PASSWORD, DEFAULT_AGENT_MODELS, DATABASE_URL
 
 logger = logging.getLogger(__name__)
+
+
+async def ensure_database_exists():
+    """
+    Connect to 'postgres' default database and CREATE DATABASE taxlegal if it doesn't exist.
+    Works even if the target database doesn't exist yet.
+    """
+    # Extract target db name and build connection to postgres default db
+    import re
+    match = re.search(r'/(\w+)$', DATABASE_URL)
+    if not match:
+        logger.warning("Could not parse database name from DATABASE_URL")
+        return
+    db_name = match.group(1)
+    if db_name == 'postgres':
+        return  # Already using default db
+
+    # Build URL pointing to 'postgres' db instead
+    postgres_url = DATABASE_URL[:DATABASE_URL.rfind('/')] + '/postgres'
+    tmp_engine = create_async_engine(postgres_url, isolation_level='AUTOCOMMIT', pool_pre_ping=True)
+    try:
+        async with tmp_engine.connect() as conn:
+            # Check if db exists
+            result = await conn.execute(
+                text(f"SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": db_name}
+            )
+            exists = result.scalar_one_or_none()
+            if not exists:
+                logger.info(f"Database '{db_name}' not found — creating...")
+                await conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+                logger.info(f"Database '{db_name}' created successfully.")
+            else:
+                logger.info(f"Database '{db_name}' already exists.")
+    except Exception as e:
+        logger.error(f"Could not ensure database exists: {e}")
+    finally:
+        await tmp_engine.dispose()
 
 
 async def run_init_sql():
@@ -85,6 +123,7 @@ async def seed_agent_settings():
 
 
 async def run_startup():
+    await ensure_database_exists()
     await run_init_sql()
     await seed_admin()
     await seed_agent_settings()
