@@ -29,32 +29,53 @@ async def ensure_legalai_database():
 
 
 async def init_legalai_schema():
-    """Create tables, extensions, and indexes."""
-    async with legalai_engine.begin() as conn:
-        # Enable pgvector
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+    """Create tables, extensions, and indexes.
+    
+    Each statement is wrapped individually so race conditions between
+    Uvicorn workers (all call startup) don't crash the app.
+    """
+    # Extensions — run outside transaction to avoid duplicate-key race condition
+    try:
+        async with legalai_engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+    except Exception:
+        pass  # already exists — safe to ignore
+    try:
+        async with legalai_engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm"))
+    except Exception:
+        pass
 
+    async with legalai_engine.begin() as conn:
         # Create all ORM-defined tables
         await conn.run_sync(LegalAIBase.metadata.create_all)
 
         # Vector similarity index
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_law_chunks_embedding
-            ON law_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 50)
-        """))
+        try:
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_law_chunks_embedding
+                ON law_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 50)
+            """))
+        except Exception:
+            pass
 
         # Full-text search index on TSV column
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_law_chunks_tsv
-            ON law_chunks USING GIN (tsv)
-        """))
+        try:
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_law_chunks_tsv
+                ON law_chunks USING GIN (tsv)
+            """))
+        except Exception:
+            pass
 
         # GIN index for array domain filtering
-        await conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_law_documents_domains
-            ON law_documents USING GIN (domains)
-        """))
+        try:
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS idx_law_documents_domains
+                ON law_documents USING GIN (domains)
+            """))
+        except Exception:
+            pass
 
         # TSV auto-update trigger function
         await conn.execute(text("""
@@ -72,8 +93,7 @@ async def init_legalai_schema():
             $$ LANGUAGE plpgsql
         """))
 
-        # asyncpg does not support multiple statements in one execute() call
-        # — split DROP and CREATE into separate calls
+        # asyncpg: split DROP and CREATE TRIGGER into separate calls
         await conn.execute(text(
             "DROP TRIGGER IF EXISTS law_chunks_tsv_trigger ON law_chunks"
         ))
@@ -83,7 +103,7 @@ async def init_legalai_schema():
             FOR EACH ROW EXECUTE FUNCTION update_law_chunk_tsv()
         """))
 
-        logger.info("LegalAI schema initialized")
+    logger.info("LegalAI schema initialized")
 
 
 async def run_legalai_startup():
