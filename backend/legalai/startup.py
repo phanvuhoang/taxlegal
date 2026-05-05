@@ -72,8 +72,12 @@ async def init_legalai_schema():
             $$ LANGUAGE plpgsql
         """))
 
+        # asyncpg does not support multiple statements in one execute() call
+        # — split DROP and CREATE into separate calls
+        await conn.execute(text(
+            "DROP TRIGGER IF EXISTS law_chunks_tsv_trigger ON law_chunks"
+        ))
         await conn.execute(text("""
-            DROP TRIGGER IF EXISTS law_chunks_tsv_trigger ON law_chunks;
             CREATE TRIGGER law_chunks_tsv_trigger
             BEFORE INSERT OR UPDATE ON law_chunks
             FOR EACH ROW EXECUTE FUNCTION update_law_chunk_tsv()
