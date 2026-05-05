@@ -1,0 +1,200 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { mattersApi } from "../lib/api";
+import ModelPicker from "../components/ModelPicker";
+import { ArrowLeft, Zap } from "lucide-react";
+import toast from "react-hot-toast";
+
+export default function NewMatter() {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({
+    title: "",
+    client_request: "",
+    practice_area: "tax",
+    pipeline_mode: "manual",
+    model_override: "",
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.title.trim() || !form.client_request.trim()) {
+      toast.error("Vui lòng điền đầy đủ tiêu đề và yêu cầu");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await mattersApi.create({
+        ...form,
+        model_override: form.model_override || undefined,
+      });
+      toast.success("Matter đã tạo! Intake Enhancer đang phân tích...");
+      navigate(`/matters/${res.data.id}`);
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Tạo matter thất bại");
+      setLoading(false);
+    }
+  };
+
+  const EXAMPLE = `Tôi là công ty Việt Nam, hàng tháng trả chi phí subscription cho Claude Code ($200/tháng) cho Anthropic là công ty cung cấp dịch vụ AI qua nền tảng số ở nước ngoài và khoảng $1000 để sử dụng API của Anthropic.
+
+Câu hỏi:
+1. Khoản chi này chịu thuế như thế nào ở Việt Nam (thuế TNDN, thuế GTGT và các thuế khác)?
+2. Công ty tôi có cần khai báo thuế gì không?
+3. Chi phí này có được trừ cho mục đích thuế TNDN không, cần những chứng từ gì?`;
+
+  return (
+    <div className="max-w-3xl">
+      <div className="flex items-center gap-3 mb-6">
+        <button
+          onClick={() => navigate(-1)}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Tạo Matter Mới</h1>
+          <p className="text-sm text-gray-500">Gửi yêu cầu tư vấn để AI pipeline xử lý</p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Title */}
+        <div className="card">
+          <label className="block text-sm font-semibold text-gray-900 mb-2">
+            Tiêu đề Matter <span className="text-red-500">*</span>
+          </label>
+          <input
+            className="input-field"
+            placeholder="VD: Thuế nhà thầu — Anthropic Claude API"
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            required
+          />
+        </div>
+
+        {/* Client request */}
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-sm font-semibold text-gray-900">
+              Yêu cầu của Khách hàng <span className="text-red-500">*</span>
+            </label>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, client_request: EXAMPLE, title: form.title || "Thuế nhà thầu — Dịch vụ AI nước ngoài" })}
+              className="text-xs text-primary-600 hover:text-primary-700 font-medium"
+            >
+              Dùng ví dụ mẫu
+            </button>
+          </div>
+          <textarea
+            className="input-field min-h-48 font-mono text-sm"
+            placeholder="Mô tả chi tiết yêu cầu tư vấn, bao gồm:
+• Thông tin cụ thể về tình huống
+• Các câu hỏi cụ thể cần được tư vấn
+• Thông tin về công ty, ngành nghề..."
+            value={form.client_request}
+            onChange={(e) => setForm({ ...form, client_request: e.target.value })}
+            required
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            {form.client_request.length} ký tự
+          </p>
+        </div>
+
+        {/* Settings */}
+        <div className="card">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Cấu hình Pipeline</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Lĩnh vực</label>
+              <select
+                className="input-field"
+                value={form.practice_area}
+                onChange={(e) => setForm({ ...form, practice_area: e.target.value })}
+              >
+                <option value="tax">Thuế (Tax)</option>
+                <option value="legal">Pháp luật (Legal)</option>
+                <option value="both">Thuế & Pháp luật</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Chế độ Pipeline</label>
+              <select
+                className="input-field"
+                value={form.pipeline_mode}
+                onChange={(e) => setForm({ ...form, pipeline_mode: e.target.value })}
+              >
+                <option value="manual">Manual — Duyệt từng bước</option>
+                <option value="auto">Auto — Chạy tự động</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-4 p-3 rounded-lg bg-gray-50 border border-gray-100">
+            {form.pipeline_mode === "manual" ? (
+              <p className="text-xs text-gray-600">
+                <strong>Manual Mode:</strong> Sau mỗi bước, bạn sẽ xem kết quả và nhấn "Tiếp tục" để chạy bước tiếp theo. Kiểm soát hoàn toàn.
+              </p>
+            ) : (
+              <p className="text-xs text-gray-600">
+                <Zap className="w-3 h-3 inline mr-1 text-yellow-500" />
+                <strong>Auto Mode:</strong> Pipeline chạy tự động qua tất cả 7 bước. Nhanh hơn nhưng ít kiểm soát hơn.
+              </p>
+            )}
+          </div>
+
+          <div className="mt-4">
+            <ModelPicker
+              value={form.model_override}
+              onChange={(v) => setForm({ ...form, model_override: v })}
+              label="Model override (tùy chọn — mặc định theo Admin settings)"
+            />
+          </div>
+        </div>
+
+        {/* Pipeline overview */}
+        <div className="card bg-primary-50 border-primary-100">
+          <p className="text-xs font-semibold text-primary-700 mb-2">Pipeline sẽ chạy qua 7 bước:</p>
+          <div className="grid grid-cols-1 gap-1">
+            {[
+              "1. Intake Enhancer — Xác minh sự kiện & luật áp dụng",
+              "2. Partner P1 — Lập brief & phân công",
+              "3. SA Blueprint — Thiết kế cấu trúc tài liệu",
+              "4. JA Research — Nghiên cứu sâu, soạn thảo từng phần",
+              "5. SA Adversarial Review — Kiểm tra đối kháng",
+              "6. Partner P2 — Duyệt chiến lược & chain audit",
+              "7. Partner P3 — Hoàn thiện văn bản cuối",
+            ].map((s) => (
+              <p key={s} className="text-xs text-primary-700">{s}</p>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="btn-secondary flex-1"
+          >
+            Huỷ
+          </button>
+          <button
+            type="submit"
+            disabled={loading}
+            className="btn-primary flex-2 flex items-center justify-center gap-2 flex-1"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Đang tạo...
+              </>
+            ) : (
+              "Tạo Matter & Bắt đầu Pipeline →"
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

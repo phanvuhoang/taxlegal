@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  taxlegal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: taxlegal-ai:latest
+    container_name: taxlegal
+    restart: unless-stopped
+    ports:
+      - "8010:8000"   # host:container — change 8010 to your preferred port
+    environment:
+      # ── Database ─────────────────────────────────────────────────────────────
+      # taxlegal app DB (schema 'taxlegal' in same PostgreSQL instance)
+      - DATABASE_URL=${DATABASE_URL}
+      # dbvntax read-only (existing tax law DB)
+      - DBVNTAX_DATABASE_URL=${DBVNTAX_DATABASE_URL}
+
+      # ── Security ──────────────────────────────────────────────────────────────
+      - SECRET_KEY=${SECRET_KEY}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-vuhoang04@gmail.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
+
+      # ── AI Providers ──────────────────────────────────────────────────────────
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-chat}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - OPENROUTER_MODEL1=${OPENROUTER_MODEL1}
+      - OPENROUTER_MODEL2=${OPENROUTER_MODEL2}
+      - OPENROUTER_MODEL3=${OPENROUTER_MODEL3}
+      - OPENROUTER_MODEL4=${OPENROUTER_MODEL4}
+
+      # ── Web Search ────────────────────────────────────────────────────────────
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - PERPLEXITY_SEARCH_MODEL=${PERPLEXITY_SEARCH_MODEL:-sonar}
+
+      # ── App ────────────────────────────────────────────────────────────────────
+      - APP_PORT=8000
+
+    networks:
+      - taxlegal-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # access VPS-local PostgreSQL
+
+networks:
+  taxlegal-net:
+    driver: bridge
