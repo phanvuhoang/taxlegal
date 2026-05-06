@@ -23,6 +23,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY backend/ ./backend/
 
+# Copy skill files (seeded into DB on startup)
+COPY skills/ ./skills/
+
 # Copy built React app from stage 1
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
