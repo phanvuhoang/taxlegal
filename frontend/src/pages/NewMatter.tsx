@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { mattersApi, pipelineTemplatesApi } from "../lib/api";
 import ModelPicker from "../components/ModelPicker";
-import { ArrowLeft, Zap } from "lucide-react";
+import { ArrowLeft, Zap, Languages } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface PipelineTemplate {
@@ -24,6 +24,7 @@ export default function NewMatter() {
     client_request: "",
     practice_area: "tax",
     pipeline_mode: "manual",
+    output_language: "vi",
     model_override: "",
     pipeline_template_id: null as number | null,
   });
@@ -58,6 +59,7 @@ export default function NewMatter() {
         practice_area: form.practice_area,
         pipeline_mode: form.pipeline_mode,
       };
+      payload.output_language = form.output_language;
       if (form.model_override) payload.model_override = form.model_override;
       if (form.pipeline_template_id) payload.pipeline_template_id = form.pipeline_template_id;
 
@@ -209,6 +211,33 @@ Câu hỏi:
                 <strong>Auto Mode:</strong> Pipeline chạy tự động qua tất cả 7 bước. Nhanh hơn nhưng ít kiểm soát hơn.
               </p>
             )}
+          </div>
+
+          {/* Output language toggle */}
+          <div className="mt-4">
+            <label className="block text-xs font-medium text-gray-600 mb-2">
+              <Languages className="w-3 h-3 inline mr-1" />
+              Ngôn ngữ kết quả tư vấn
+            </label>
+            <div className="flex gap-2">
+              {[
+                { value: "vi", label: "🇻🇳 Tiếng Việt" },
+                { value: "en", label: "🇺🇸 English" },
+              ].map((lang) => (
+                <button
+                  key={lang.value}
+                  type="button"
+                  onClick={() => setForm({ ...form, output_language: lang.value })}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    form.output_language === lang.value
+                      ? "border-green-600 text-green-700 bg-green-50"
+                      : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {lang.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="mt-4">

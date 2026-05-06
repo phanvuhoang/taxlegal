@@ -136,6 +136,7 @@ class Matter(Base):
     is_sample = Column(Boolean, default=False)     # bài mẫu cho tham khảo
     pipeline_template_id = Column(Integer, ForeignKey("taxlegal.pipeline_templates.id"), nullable=True)
     bot_variant_overrides = Column(JSONB, default=dict)  # per-matter override map {step: bot_variant_slug}
+    output_language = Column(String(2), default="vi")  # "vi" or "en"
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

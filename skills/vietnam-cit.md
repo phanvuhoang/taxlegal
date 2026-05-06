@@ -8,6 +8,7 @@ description: >
 category: tax
 tags: [cit, tndn, corporate-tax, vietnam, transfer-pricing, tax-incentives]
 applicable_bots: [partner, ja, sa]
+editable: true
 ---
 
 # Skill: Thuế Thu nhập Doanh nghiệp (CIT) — Việt Nam

@@ -6,7 +6,8 @@ description: >
   phân tích rủi ro thuế. Dùng cho Partner Bot và JA Bot khi tư vấn chiến lược thuế doanh nghiệp.
 category: tax
 tags: [tax-strategy, tax-planning, restructuring, risk-management]
-applicable_bots: [partner, ja]
+applicable_bots: [partner]
+editable: true
 ---
 
 # Skill: Tax Strategy (Chiến lược Thuế)

@@ -64,6 +64,7 @@ async def build_step_input(db: AsyncSession, matter: Matter, step_number: int) -
         "client_request": matter.client_request,
         "title": matter.title,
         "practice_area": matter.practice_area,
+        "output_language": getattr(matter, "output_language", "vi"),
         "step_number": step_number,
         "previous_steps": step_outputs,
         "verified_facts": matter.verified_facts or [],
@@ -479,7 +480,10 @@ async def run_partner_p3_step(db: AsyncSession, matter: Matter, step: PipelineSt
 {json.dumps(matter.applicable_laws or [], ensure_ascii=False)}
 
 Hãy tạo văn bản tư vấn CUỐI CÙNG hoàn chỉnh theo system prompt. 
-Bao gồm: Executive Summary, nội dung đầy đủ, decision table (nếu cần), căn cứ pháp lý, disclaimer."""
+Bao gồm: Executive Summary, nội dung đầy đủ, decision table (nếu cần), căn cứ pháp lý, disclaimer.
+
+## NGÔN NGỮ ĐẦU RA
+{"Write the ENTIRE final advisory document in ENGLISH. All headings, content, citations, and recommendations must be in English." if getattr(matter, 'output_language', 'vi') == 'en' else "Viết toàn bộ văn bản tư vấn CUỐI CÙNG bằng TIẾNG VIỆT. Tất cả các mục, nội dung, trích dẫn và khuyến nghị phải bằng tiếng Việt."}"""
 
     result = await call_ai(
         model_id=model_id,

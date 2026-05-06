@@ -6,7 +6,8 @@ description: >
   hồ sơ lưu trữ, hóa đơn chứng từ theo quy định. Dùng cho JA-Compliance Bot.
 category: compliance
 tags: [compliance, tax-filing, invoice, record-keeping, audit-risk, vietnam]
-applicable_bots: [ja, sa]
+applicable_bots: [partner, ja, sa]
+editable: true
 ---
 
 # Skill: Tax Compliance — Kiểm tra Tuân thủ Thuế

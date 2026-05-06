@@ -19,6 +19,7 @@ class CreateMatterRequest(BaseModel):
     client_request: str
     practice_area: str = "tax"
     pipeline_mode: str = "manual"  # manual | auto
+    output_language: str = "vi"  # vi | en
     model_override: Optional[str] = None
     pipeline_template_id: Optional[int] = None
 
@@ -86,6 +87,7 @@ async def create_matter(
         client_request=req.client_request,
         practice_area=req.practice_area,
         pipeline_mode=req.pipeline_mode,
+        output_language=req.output_language,
         status="draft",
         current_step=0,
         pipeline_template_id=req.pipeline_template_id,
@@ -122,6 +124,7 @@ async def get_matter(
         "client_request": matter.client_request,
         "practice_area": matter.practice_area,
         "pipeline_mode": matter.pipeline_mode,
+        "output_language": getattr(matter, "output_language", "vi"),
         "status": matter.status,
         "current_step": matter.current_step,
         "verified_facts": matter.verified_facts or [],

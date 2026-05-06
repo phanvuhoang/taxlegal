@@ -38,6 +38,9 @@ OPENROUTER_MODEL4 = os.getenv("OPENROUTER_MODEL4", "")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_SEARCH_MODEL = os.getenv("PERPLEXITY_SEARCH_MODEL", "sonar")
 
+# ── Gamma Slides ──────────────────────────────────────────────────────────────
+GAMMA_API_KEY = os.getenv("GAMMA_API_KEY", "")
+
 # ── Model registry ────────────────────────────────────────────────────────────
 def get_available_models() -> list[dict]:
     models = []

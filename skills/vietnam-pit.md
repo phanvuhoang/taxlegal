@@ -7,7 +7,8 @@ description: >
   Dùng cho JA Bot và Partner Bot khi phân tích vấn đề PIT.
 category: tax
 tags: [pit, tncn, personal-income-tax, salary, freelance, vietnam]
-applicable_bots: [partner, ja]
+applicable_bots: [partner, ja, sa]
+editable: true
 ---
 
 # Skill: Thuế Thu nhập Cá nhân (PIT) — Việt Nam

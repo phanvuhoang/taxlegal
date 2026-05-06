@@ -396,8 +396,6 @@ async def delete_bot_variant(
     variant = result.scalar_one_or_none()
     if not variant:
         raise HTTPException(status_code=404, detail="BotVariant not found")
-    if variant.is_builtin:
-        raise HTTPException(status_code=400, detail="Cannot delete a builtin BotVariant")
     await db.delete(variant)
     await db.commit()
 

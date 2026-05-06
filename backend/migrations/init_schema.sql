@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS taxlegal.matters (
     total_tokens INTEGER DEFAULT 0,
     duration_ms INTEGER,
     is_sample BOOLEAN DEFAULT FALSE,
+    output_language VARCHAR(2) DEFAULT 'vi',
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -266,3 +267,65 @@ ALTER TABLE taxlegal.matters
     ADD COLUMN IF NOT EXISTS pipeline_template_id INTEGER REFERENCES taxlegal.pipeline_templates(id) ON DELETE SET NULL,
     ADD COLUMN IF NOT EXISTS bot_variant_overrides JSONB DEFAULT '{}';
 -- bot_variant_overrides: per-matter override map {step: bot_variant_slug}
+
+ALTER TABLE taxlegal.matters ADD COLUMN IF NOT EXISTS output_language VARCHAR(2) DEFAULT 'vi';
+
+-- Writing Module tables
+CREATE TABLE IF NOT EXISTS taxlegal.writing_jobs (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    content_type VARCHAR(50) DEFAULT 'analysis',
+    topic TEXT NOT NULL,
+    context TEXT,
+    output_language VARCHAR(2) DEFAULT 'vi',
+    bot_variant_id INTEGER,
+    skill_ids INTEGER[] DEFAULT '{}',
+    status VARCHAR(50) DEFAULT 'draft',
+    word_count_target INTEGER DEFAULT 2000,
+    sections JSONB DEFAULT '[]',
+    final_content TEXT,
+    docx_path VARCHAR(500),
+    gamma_url VARCHAR(500),
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS taxlegal.writing_sections (
+    id SERIAL PRIMARY KEY,
+    job_id INTEGER NOT NULL REFERENCES taxlegal.writing_jobs(id) ON DELETE CASCADE,
+    section_order INTEGER NOT NULL,
+    section_title VARCHAR(300),
+    prompt TEXT,
+    content TEXT,
+    token_count INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS taxlegal.priority_docs (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    doc_type VARCHAR(100),
+    source_url VARCHAR(1000),
+    content TEXT NOT NULL,
+    embedding vector(1536),
+    priority_level INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS taxlegal.sample_writings (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500) NOT NULL,
+    content_type VARCHAR(50),
+    language VARCHAR(2) DEFAULT 'vi',
+    content TEXT NOT NULL,
+    tags TEXT[] DEFAULT '{}',
+    is_active BOOLEAN DEFAULT TRUE,
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);

@@ -18,6 +18,12 @@ import AdminCrawler from "./pages/AdminCrawler";
 import AdminSkills from "./pages/AdminSkills";
 import AdminBotVariants from "./pages/AdminBotVariants";
 import AdminPipelineTemplates from "./pages/AdminPipelineTemplates";
+// Module 3 — Writing
+import Writing from "./pages/Writing";
+import WritingNew from "./pages/WritingNew";
+import WritingDetail from "./pages/WritingDetail";
+import AdminPriorityDocs from "./pages/AdminPriorityDocs";
+import AdminSampleWritings from "./pages/AdminSampleWritings";
 import { getUser } from "./lib/auth";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -54,6 +60,11 @@ export default function App() {
         <Route path="/legal-search" element={<RequireAuth><LegalSearch /></RequireAuth>} />
         <Route path="/legal-chat" element={<RequireAuth><LegalChat /></RequireAuth>} />
         <Route path="/legal-documents" element={<RequireAuth><LegalDocuments /></RequireAuth>} />
+        {/* Module 3 — Writing */}
+        <Route path="/writing" element={<RequireAuth><Writing /></RequireAuth>} />
+        <Route path="/writing/new" element={<RequireAuth><WritingNew /></RequireAuth>} />
+        <Route path="/writing/:id" element={<RequireAuth><WritingDetail /></RequireAuth>} />
+        {/* Admin */}
         <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/autotest" element={<RequireAdmin><AdminAutotest /></RequireAdmin>} />
@@ -61,6 +72,8 @@ export default function App() {
         <Route path="/admin/skills" element={<RequireAdmin><AdminSkills /></RequireAdmin>} />
         <Route path="/admin/bot-variants" element={<RequireAdmin><AdminBotVariants /></RequireAdmin>} />
         <Route path="/admin/pipeline-templates" element={<RequireAdmin><AdminPipelineTemplates /></RequireAdmin>} />
+        <Route path="/admin/priority-docs" element={<RequireAdmin><AdminPriorityDocs /></RequireAdmin>} />
+        <Route path="/admin/sample-writings" element={<RequireAdmin><AdminSampleWritings /></RequireAdmin>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

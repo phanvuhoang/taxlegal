@@ -7,7 +7,8 @@ description: >
   Dùng cho JA Bot (Advisory variant) và Partner Bot.
 category: advisory
 tags: [memo, advisory, writing, quality, structure]
-applicable_bots: [ja, partner]
+applicable_bots: [partner, ja, sa]
+editable: true
 ---
 
 # Skill: Viết Advisory Memo Tư vấn Thuế

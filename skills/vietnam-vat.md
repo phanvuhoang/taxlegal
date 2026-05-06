@@ -8,6 +8,7 @@ description: >
 category: tax
 tags: [vat, gtgt, invoice, input-tax, zero-rate, vietnam]
 applicable_bots: [partner, ja, sa]
+editable: true
 ---
 
 # Skill: Thuế Giá trị gia tăng (VAT) — Việt Nam
