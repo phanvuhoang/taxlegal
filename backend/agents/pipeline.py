@@ -11,7 +11,7 @@ from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 
-from backend.models import Matter, PipelineStep, ResearchChunk, MatterStatus
+from backend.models import Matter, PipelineStep, ResearchChunk, MatterStatus, BotVariant, PipelineTemplate, Skill
 from backend.ai_provider import call_ai
 from backend.web_search import (
     verify_fact, verify_law_currency, search_practical_guidance, web_search
@@ -75,7 +75,7 @@ async def build_step_input(db: AsyncSession, matter: Matter, step_number: int) -
     }
 
 
-async def run_intake_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str):
+async def run_intake_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 1: Intake Enhancer"""
     # First, do preliminary web searches for fact/law verification
     searches = []
@@ -98,7 +98,7 @@ Tập trung vào việc xác minh sự kiện, kiểm tra hiệu lực luật, v
     result = await call_ai(
         model_id=model_id,
         messages=[{"role": "user", "content": prompt}],
-        system_prompt=INTAKE_SYSTEM_PROMPT,
+        system_prompt=await build_system_prompt_with_skills(db, INTAKE_SYSTEM_PROMPT, bot_variant),
         temperature=0.2,
         max_tokens=8000,
         provider=provider,
@@ -124,7 +124,7 @@ Tập trung vào việc xác minh sự kiện, kiểm tra hiệu lực luật, v
     }
 
 
-async def run_partner_p1_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str):
+async def run_partner_p1_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 2: Partner P1 Brief"""
     intake_data = json.dumps({
         "verified_facts": matter.verified_facts,
@@ -145,7 +145,7 @@ Hãy tạo Partner Brief theo đúng format JSON trong system prompt.
     result = await call_ai(
         model_id=model_id,
         messages=[{"role": "user", "content": prompt}],
-        system_prompt=PARTNER_P1_SYSTEM_PROMPT,
+        system_prompt=await build_system_prompt_with_skills(db, PARTNER_P1_SYSTEM_PROMPT, bot_variant),
         temperature=0.3,
         max_tokens=6000,
         provider=provider,
@@ -164,7 +164,7 @@ Hãy tạo Partner Brief theo đúng format JSON trong system prompt.
     }
 
 
-async def run_sa_blueprint_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str):
+async def run_sa_blueprint_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 3: SA Blueprint"""
     context = json.dumps({
         "verified_facts": matter.verified_facts,
@@ -185,7 +185,7 @@ Hãy thiết kế Document Blueprint và Chunk Division theo format JSON trong s
     result = await call_ai(
         model_id=model_id,
         messages=[{"role": "user", "content": prompt}],
-        system_prompt=SA_BLUEPRINT_SYSTEM_PROMPT,
+        system_prompt=await build_system_prompt_with_skills(db, SA_BLUEPRINT_SYSTEM_PROMPT, bot_variant),
         temperature=0.2,
         max_tokens=8000,
         provider=provider,
@@ -204,7 +204,7 @@ Hãy thiết kế Document Blueprint và Chunk Division theo format JSON trong s
     }
 
 
-async def run_ja_research_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str):
+async def run_ja_research_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 4: JA Research — process all chunks"""
     blueprint = matter.sa_blueprint or {}
     chunks = blueprint.get("chunks", [])
@@ -267,7 +267,7 @@ Hãy thực hiện đầy đủ 5 phases (A, B1, B2, B2.5, C) và tạo:
         result = await call_ai(
             model_id=model_id,
             messages=[{"role": "user", "content": chunk_prompt}],
-            system_prompt=JA_RESEARCH_SYSTEM_PROMPT,
+            system_prompt=await build_system_prompt_with_skills(db, JA_RESEARCH_SYSTEM_PROMPT, bot_variant),
             temperature=0.3,
             max_tokens=8000,
             provider=provider,
@@ -307,7 +307,7 @@ Hãy thực hiện đầy đủ 5 phases (A, B1, B2, B2.5, C) và tạo:
     }
 
 
-async def run_sa_review_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str):
+async def run_sa_review_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 5: SA Adversarial Review"""
     # Get JA output (step 4)
     result_q = await db.execute(
@@ -343,7 +343,7 @@ Hãy thực hiện adversarial review đầy đủ theo system prompt.
     result = await call_ai(
         model_id=model_id,
         messages=[{"role": "user", "content": prompt}],
-        system_prompt=SA_REVIEW_SYSTEM_PROMPT,
+        system_prompt=await build_system_prompt_with_skills(db, SA_REVIEW_SYSTEM_PROMPT, bot_variant),
         temperature=0.2,
         max_tokens=8000,
         provider=provider,
@@ -382,7 +382,7 @@ Hãy thực hiện adversarial review đầy đủ theo system prompt.
     }
 
 
-async def run_partner_p2_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str):
+async def run_partner_p2_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 6: Partner P2 — Strategic Review"""
     result_q = await db.execute(
         select(PipelineStep).where(
@@ -410,7 +410,7 @@ Hãy thực hiện Partner P2 review theo system prompt: verification chain audi
     result = await call_ai(
         model_id=model_id,
         messages=[{"role": "user", "content": prompt}],
-        system_prompt=PARTNER_P2_SYSTEM_PROMPT,
+        system_prompt=await build_system_prompt_with_skills(db, PARTNER_P2_SYSTEM_PROMPT, bot_variant),
         temperature=0.3,
         max_tokens=6000,
         provider=provider,
@@ -429,7 +429,7 @@ Hãy thực hiện Partner P2 review theo system prompt: verification chain audi
     }
 
 
-async def run_partner_p3_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str):
+async def run_partner_p3_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 7: Partner P3 — Finalize"""
     # Collect all JA chunks
     chunks_q = await db.execute(
@@ -484,7 +484,7 @@ Bao gồm: Executive Summary, nội dung đầy đủ, decision table (nếu c�
     result = await call_ai(
         model_id=model_id,
         messages=[{"role": "user", "content": prompt}],
-        system_prompt=PARTNER_P3_SYSTEM_PROMPT,
+        system_prompt=await build_system_prompt_with_skills(db, PARTNER_P3_SYSTEM_PROMPT, bot_variant),
         temperature=0.2,
         max_tokens=16000,
         provider=provider,
@@ -551,11 +551,21 @@ async def execute_pipeline_step(
         db.add(step)
         await db.flush()
 
+    # Get BotVariant for this step (may override model and system prompt)
+    bot_variant = await get_bot_for_step(db, matter, step_number)
+
     # Get model
     if model_override:
         from backend.ai_provider import _detect_provider
         model_id = model_override
         provider = _detect_provider(model_id)
+    elif bot_variant and bot_variant.model_override:
+        model_id = bot_variant.model_override
+        if bot_variant.provider_override:
+            provider = bot_variant.provider_override
+        else:
+            from backend.ai_provider import _detect_provider
+            provider = _detect_provider(model_id)
     else:
         model_id, provider = await get_agent_model(db, agent_key)
 
@@ -579,7 +589,7 @@ async def execute_pipeline_step(
             7: run_partner_p3_step,
         }
         runner = runners[step_number]
-        output = await runner(db, matter, step, model_id, provider)
+        output = await runner(db, matter, step, model_id, provider, bot_variant=bot_variant)
 
         # Update step
         step.output_data = output.get("output_data")
@@ -670,3 +680,101 @@ async def approve_step_and_continue(
     if next_step <= 7:
         return await execute_pipeline_step(db, matter_id, next_step, model_override)
     return None
+
+
+# ── Skills + BotVariants integration ──────────────────────────────────────────
+
+async def get_bot_for_step(
+    db: AsyncSession,
+    matter: "Matter",
+    step_number: int,
+) -> "Optional[BotVariant]":
+    """
+    Return the BotVariant for a given step, considering:
+    1. matter.bot_variant_overrides (per-matter override map {step: bot_variant_slug})
+    2. The matter's PipelineTemplate step_config
+    3. The default PipelineTemplate's step_config
+    Falls back to None if no BotVariant slug is found (use system defaults).
+    """
+    slug: Optional[str] = None
+
+    # 1. Per-matter overrides take highest priority
+    overrides = matter.bot_variant_overrides or {}
+    slug = overrides.get(str(step_number))
+
+    if not slug:
+        # 2. Look up the matter's pipeline template (or the default)
+        template_id = getattr(matter, "pipeline_template_id", None)
+        template: Optional[PipelineTemplate] = None
+
+        if template_id:
+            result = await db.execute(
+                select(PipelineTemplate).where(PipelineTemplate.id == template_id)
+            )
+            template = result.scalar_one_or_none()
+
+        if not template:
+            # Fall back to the default template
+            result = await db.execute(
+                select(PipelineTemplate).where(
+                    PipelineTemplate.is_default == True,
+                    PipelineTemplate.is_active == True,
+                )
+            )
+            template = result.scalar_one_or_none()
+
+        if template and template.step_config:
+            step_cfg = template.step_config.get(str(step_number)) or {}
+            slug = step_cfg.get("bot_variant_slug")
+
+    if not slug:
+        return None
+
+    # Resolve slug to BotVariant
+    result = await db.execute(
+        select(BotVariant).where(
+            BotVariant.slug == slug,
+            BotVariant.is_active == True,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def build_system_prompt_with_skills(
+    db: AsyncSession,
+    base_prompt: str,
+    bot_variant: "Optional[BotVariant]",
+) -> str:
+    """
+    Enrich base_prompt with skill content injected from the BotVariant's skill_ids.
+    If bot_variant is None or has no skill_ids, returns base_prompt unchanged.
+    If bot_variant has a system_prompt_base set, that overrides base_prompt before
+    skill injection.
+    """
+    if bot_variant is None:
+        return base_prompt
+
+    # Use variant's system_prompt_base if provided
+    effective_prompt = bot_variant.system_prompt_base or base_prompt
+
+    skill_ids = bot_variant.skill_ids or []
+    if not skill_ids:
+        return effective_prompt
+
+    # Load skills
+    result = await db.execute(
+        select(Skill).where(
+            Skill.id.in_(skill_ids),
+            Skill.is_active == True,
+        )
+    )
+    skills = result.scalars().all()
+    if not skills:
+        return effective_prompt
+
+    # Append skill content
+    skills_section = "\n\n---\n## SKILLS ACTIVATED\n"
+    for skill in skills:
+        skills_section += f"\n### {skill.name}\n{skill.content_markdown}\n"
+
+    return effective_prompt + skills_section

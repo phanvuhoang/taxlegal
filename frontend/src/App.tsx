@@ -15,6 +15,9 @@ import LegalSearch from "./pages/LegalSearch";
 import LegalChat from "./pages/LegalChat";
 import LegalDocuments from "./pages/LegalDocuments";
 import AdminCrawler from "./pages/AdminCrawler";
+import AdminSkills from "./pages/AdminSkills";
+import AdminBotVariants from "./pages/AdminBotVariants";
+import AdminPipelineTemplates from "./pages/AdminPipelineTemplates";
 import { getUser } from "./lib/auth";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -55,6 +58,9 @@ export default function App() {
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
         <Route path="/admin/autotest" element={<RequireAdmin><AdminAutotest /></RequireAdmin>} />
         <Route path="/admin/crawler" element={<RequireAdmin><AdminCrawler /></RequireAdmin>} />
+        <Route path="/admin/skills" element={<RequireAdmin><AdminSkills /></RequireAdmin>} />
+        <Route path="/admin/bot-variants" element={<RequireAdmin><AdminBotVariants /></RequireAdmin>} />
+        <Route path="/admin/pipeline-templates" element={<RequireAdmin><AdminPipelineTemplates /></RequireAdmin>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

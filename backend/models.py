@@ -134,6 +134,8 @@ class Matter(Base):
     total_tokens = Column(Integer, default=0)
     duration_ms = Column(Integer)
     is_sample = Column(Boolean, default=False)     # bài mẫu cho tham khảo
+    pipeline_template_id = Column(Integer, ForeignKey("taxlegal.pipeline_templates.id"), nullable=True)
+    bot_variant_overrides = Column(JSONB, default=dict)  # per-matter override map {step: bot_variant_slug}
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -307,5 +309,75 @@ class LawDocument(Base):
     link_tvpl = Column(Text)
     dbvntax_id = Column(Integer)  # reference to dbvntax if synced
     source = Column(String(50), default="manual")  # manual|dbvntax_sync
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ── Skills ────────────────────────────────────────────────────────────────────
+
+class Skill(Base):
+    __tablename__ = "skills"
+    __table_args__ = {"schema": "taxlegal"}
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)   # e.g. "tax-strategy"
+    version = Column(String(20), default="1.0.0")
+    description = Column(Text)
+    category = Column(String(50), default="tax")   # tax|legal|advisory|compliance
+    tags = Column(ARRAY(Text), default=list)        # ["cit", "transfer-pricing"]
+    # Which bot roles this skill applies to (comma-separated or ARRAY)
+    applicable_bots = Column(ARRAY(Text), default=list)  # ["partner", "ja", "sa", "intake"] or empty = all
+    content_markdown = Column(Text, nullable=False)  # full .md content (body only, no frontmatter)
+    frontmatter = Column(JSONB, default=dict)         # parsed YAML frontmatter as JSON
+    is_active = Column(Boolean, default=True)
+    is_builtin = Column(Boolean, default=False)       # True = seeded from repo /skills/ folder
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    created_by = Column(Integer, ForeignKey("taxlegal.users.id"), nullable=True)
+
+
+# ── BotVariants ───────────────────────────────────────────────────────────────
+
+class BotVariant(Base):
+    __tablename__ = "bot_variants"
+    __table_args__ = {"schema": "taxlegal"}
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)          # e.g. "JA-Advisory", "Partner-CIT"
+    slug = Column(String(100), unique=True, nullable=False, index=True)  # e.g. "ja-advisory"
+    role = Column(String(20), nullable=False)            # intake|partner|sa|ja
+    description = Column(Text)
+    system_prompt_base = Column(Text)                    # Override base system prompt (null = use default from prompts.py)
+    skill_ids = Column(ARRAY(Integer), default=list)     # list of Skill.id assigned to this bot
+    model_override = Column(String(200))                 # if set, override agent_settings model
+    provider_override = Column(String(50))               # if set, override provider
+    is_active = Column(Boolean, default=True)
+    is_builtin = Column(Boolean, default=False)          # True = seeded defaults
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ── PipelineTemplates ─────────────────────────────────────────────────────────
+
+class PipelineTemplate(Base):
+    __tablename__ = "pipeline_templates"
+    __table_args__ = {"schema": "taxlegal"}
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)           # e.g. "CIT Advisory", "VAT Compliance Check"
+    slug = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text)
+    practice_area = Column(String(50), default="tax")    # tax|legal|both
+    # Step configuration: maps step number (1-7) to BotVariant slug (or null = use default)
+    step_config = Column(JSONB, default=dict)
+    # Example:
+    # {
+    #   "1": {"bot_variant_slug": "intake-default", "label": "Intake Enhancer"},
+    #   "2": {"bot_variant_slug": "partner-cit", "label": "Partner Brief (CIT)"},
+    #   "4": {"bot_variant_slug": "ja-advisory", "label": "JA Research (Advisory)"},
+    # }
+    # Steps not in step_config use the system default for that step
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)          # Only one template can be default
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

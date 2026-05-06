@@ -206,3 +206,63 @@ VALUES (
   '["thuế GTGT", "thuế TNDN nhà thầu", "chi phí được trừ", "chứng từ"]',
   '{"structure": 20, "legal_accuracy": 30, "practicality": 25, "completeness": 25}'
 ) ON CONFLICT DO NOTHING;
+
+-- Skills
+CREATE TABLE IF NOT EXISTS taxlegal.skills (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    version VARCHAR(20) DEFAULT '1.0.0',
+    description TEXT,
+    category VARCHAR(50) DEFAULT 'tax',
+    tags TEXT[],
+    applicable_bots TEXT[],
+    content_markdown TEXT NOT NULL,
+    frontmatter JSONB DEFAULT '{}',
+    is_active BOOLEAN DEFAULT TRUE,
+    is_builtin BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    created_by INTEGER REFERENCES taxlegal.users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_skills_name ON taxlegal.skills(name);
+CREATE INDEX IF NOT EXISTS idx_skills_category ON taxlegal.skills(category);
+
+-- BotVariants
+CREATE TABLE IF NOT EXISTS taxlegal.bot_variants (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    role VARCHAR(20) NOT NULL,
+    description TEXT,
+    system_prompt_base TEXT,
+    skill_ids INTEGER[] DEFAULT '{}',
+    model_override VARCHAR(200),
+    provider_override VARCHAR(50),
+    is_active BOOLEAN DEFAULT TRUE,
+    is_builtin BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_bot_variants_slug ON taxlegal.bot_variants(slug);
+CREATE INDEX IF NOT EXISTS idx_bot_variants_role ON taxlegal.bot_variants(role);
+
+-- PipelineTemplates
+CREATE TABLE IF NOT EXISTS taxlegal.pipeline_templates (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+    practice_area VARCHAR(50) DEFAULT 'tax',
+    step_config JSONB DEFAULT '{}',
+    is_active BOOLEAN DEFAULT TRUE,
+    is_default BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pipeline_templates_slug ON taxlegal.pipeline_templates(slug);
+
+-- Add pipeline_template_id to matters
+ALTER TABLE taxlegal.matters
+    ADD COLUMN IF NOT EXISTS pipeline_template_id INTEGER REFERENCES taxlegal.pipeline_templates(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS bot_variant_overrides JSONB DEFAULT '{}';
+-- bot_variant_overrides: per-matter override map {step: bot_variant_slug}

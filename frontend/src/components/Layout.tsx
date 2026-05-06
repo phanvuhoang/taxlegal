@@ -3,7 +3,7 @@ import { clearAuth, getUser } from "../lib/auth";
 import {
   LayoutDashboard, FileText, BookOpen, Settings,
   LogOut, Shield, FlaskConical, Scale, Search,
-  MessageSquare, FolderOpen, Globe
+  MessageSquare, FolderOpen, Globe, Target, Bot, ClipboardList
 } from "lucide-react";
 
 const navItems = [
@@ -24,6 +24,9 @@ const adminItems = [
   { href: "/admin/users", icon: Shield, label: "Users" },
   { href: "/admin/autotest", icon: FlaskConical, label: "AutoTest" },
   { href: "/admin/crawler", icon: Globe, label: "Crawler Văn bản" },
+  { href: "/admin/skills", icon: Target, label: "Skills" },
+  { href: "/admin/bot-variants", icon: Bot, label: "Bot Variants" },
+  { href: "/admin/pipeline-templates", icon: ClipboardList, label: "Pipeline Templates" },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

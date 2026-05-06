@@ -1,20 +1,48 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { mattersApi } from "../lib/api";
+import { mattersApi, pipelineTemplatesApi } from "../lib/api";
 import ModelPicker from "../components/ModelPicker";
 import { ArrowLeft, Zap } from "lucide-react";
 import toast from "react-hot-toast";
 
+interface PipelineTemplate {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  practice_area: string;
+  is_active: boolean;
+  is_default: boolean;
+}
+
 export default function NewMatter() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [templates, setTemplates] = useState<PipelineTemplate[]>([]);
   const [form, setForm] = useState({
     title: "",
     client_request: "",
     practice_area: "tax",
     pipeline_mode: "manual",
     model_override: "",
+    pipeline_template_id: null as number | null,
   });
+
+  useEffect(() => {
+    pipelineTemplatesApi
+      .listPublic()
+      .then((r) => {
+        const active: PipelineTemplate[] = (r.data || []).filter((t: PipelineTemplate) => t.is_active);
+        setTemplates(active);
+        const defaultTemplate = active.find((t) => t.is_default);
+        if (defaultTemplate) {
+          setForm((prev) => ({ ...prev, pipeline_template_id: defaultTemplate.id }));
+        }
+      })
+      .catch(() => {
+        // Templates are optional — fail silently
+      });
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,10 +52,16 @@ export default function NewMatter() {
     }
     setLoading(true);
     try {
-      const res = await mattersApi.create({
-        ...form,
-        model_override: form.model_override || undefined,
-      });
+      const payload: Record<string, any> = {
+        title: form.title,
+        client_request: form.client_request,
+        practice_area: form.practice_area,
+        pipeline_mode: form.pipeline_mode,
+      };
+      if (form.model_override) payload.model_override = form.model_override;
+      if (form.pipeline_template_id) payload.pipeline_template_id = form.pipeline_template_id;
+
+      const res = await mattersApi.create(payload);
       toast.success("Matter đã tạo! Intake Enhancer đang phân tích...");
       navigate(`/matters/${res.data.id}`);
     } catch (err: any) {
@@ -42,6 +76,8 @@ Câu hỏi:
 1. Khoản chi này chịu thuế như thế nào ở Việt Nam (thuế TNDN, thuế GTGT và các thuế khác)?
 2. Công ty tôi có cần khai báo thuế gì không?
 3. Chi phí này có được trừ cho mục đích thuế TNDN không, cần những chứng từ gì?`;
+
+  const selectedTemplate = templates.find((t) => t.id === form.pipeline_template_id);
 
   return (
     <div className="max-w-3xl">
@@ -130,6 +166,37 @@ Câu hỏi:
               </select>
             </div>
           </div>
+
+          {/* Pipeline Template selector */}
+          {templates.length > 0 && (
+            <div className="mt-4">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Pipeline Template
+              </label>
+              <select
+                className="input-field"
+                value={form.pipeline_template_id ?? ""}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    pipeline_template_id: e.target.value ? Number(e.target.value) : null,
+                  })
+                }
+              >
+                <option value="">— Không dùng template —</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}{t.is_default ? " ★" : ""} [{t.practice_area}]
+                  </option>
+                ))}
+              </select>
+              {selectedTemplate && (
+                <p className="text-xs text-gray-500 mt-1 ml-1">
+                  {selectedTemplate.description}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 p-3 rounded-lg bg-gray-50 border border-gray-100">
             {form.pipeline_mode === "manual" ? (

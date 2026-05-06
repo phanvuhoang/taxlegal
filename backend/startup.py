@@ -127,3 +127,314 @@ async def run_startup():
     await run_init_sql()
     await seed_admin()
     await seed_agent_settings()
+
+
+# ── Skills / BotVariants / PipelineTemplates seed ─────────────────────────────
+
+DEFAULT_BOT_VARIANTS = [
+    {
+        "name": "Intake Enhancer (Default)",
+        "slug": "intake-default",
+        "role": "intake",
+        "description": "Bot tiếp nhận và xác minh sự kiện mặc định",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+    {
+        "name": "Partner Bot (Default)",
+        "slug": "partner-default",
+        "role": "partner",
+        "description": "Partner Bot mặc định — lập brief và review chiến lược",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+    {
+        "name": "SA Bot (Default)",
+        "slug": "sa-default",
+        "role": "sa",
+        "description": "SA Bot mặc định — blueprint và adversarial review",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot (Default)",
+        "slug": "ja-default",
+        "role": "ja",
+        "description": "JA Bot mặc định — 5-phase research pipeline",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — Advisory",
+        "slug": "ja-advisory",
+        "role": "ja",
+        "description": "JA Bot chuyên viết advisory memo tư vấn thuế — dùng skill advisory-memo + tax-strategy",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — Compliance",
+        "slug": "ja-compliance",
+        "role": "ja",
+        "description": "JA Bot chuyên về compliance check — kiểm tra tuân thủ quy định thuế",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+    {
+        "name": "Partner Bot — CIT Specialist",
+        "slug": "partner-cit",
+        "role": "partner",
+        "description": "Partner Bot chuyên về Thuế TNDN (CIT) — dùng skill vietnam-cit",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+    {
+        "name": "Partner Bot — VAT Specialist",
+        "slug": "partner-vat",
+        "role": "partner",
+        "description": "Partner Bot chuyên về Thuế GTGT (VAT) — dùng skill vietnam-vat",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": True,
+        "is_active": True,
+    },
+]
+
+DEFAULT_PIPELINE_TEMPLATES = [
+    {
+        "name": "Standard Default",
+        "slug": "standard-default",
+        "description": "Pipeline mặc định — tất cả bước dùng bot mặc định",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake Enhancer"},
+            "2": {"bot_variant_slug": "partner-default", "label": "Partner Brief"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-default", "label": "JA Research"},
+            "5": {"bot_variant_slug": "sa-default", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-default", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-default", "label": "Partner P3 Finalize"},
+        },
+        "is_default": True,
+        "is_active": True,
+    },
+    {
+        "name": "CIT Advisory Deep",
+        "slug": "cit-advisory-deep",
+        "description": "Pipeline chuyên về tư vấn Thuế TNDN — dùng Partner-CIT và JA-Advisory",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake Enhancer"},
+            "2": {"bot_variant_slug": "partner-cit", "label": "Partner Brief (CIT Specialist)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-advisory", "label": "JA Research (Advisory)"},
+            "5": {"bot_variant_slug": "sa-default", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-cit", "label": "Partner P2 Review (CIT)"},
+            "7": {"bot_variant_slug": "partner-cit", "label": "Partner P3 Finalize (CIT)"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "VAT Compliance Check",
+        "slug": "vat-compliance-check",
+        "description": "Pipeline kiểm tra tuân thủ Thuế GTGT — dùng Partner-VAT và JA-Compliance",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake Enhancer"},
+            "2": {"bot_variant_slug": "partner-vat", "label": "Partner Brief (VAT Specialist)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-compliance", "label": "JA Compliance Check"},
+            "5": {"bot_variant_slug": "sa-default", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-vat", "label": "Partner P2 Review (VAT)"},
+            "7": {"bot_variant_slug": "partner-vat", "label": "Partner P3 Finalize (VAT)"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+]
+
+# Maps bot slug → skill names to link after seeding
+BOT_SKILL_LINKS = {
+    "ja-advisory": ["advisory-memo", "tax-strategy"],
+    "ja-compliance": ["tax-compliance"],
+    "partner-cit": ["vietnam-cit"],
+    "partner-vat": ["vietnam-vat"],
+}
+
+
+async def seed_skills_and_bots():
+    """
+    1. Scan /skills/*.md files and upsert into taxlegal.skills
+    2. Seed default BotVariants
+    3. Seed default PipelineTemplates
+    4. Link skill_ids to bots based on BOT_SKILL_LINKS
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    try:
+        import yaml  # PyYAML
+        HAS_YAML = True
+    except ImportError:
+        HAS_YAML = False
+        logger.warning("PyYAML not installed — skill frontmatter will be stored as empty dict")
+
+    skills_dir = Path(__file__).parent.parent / "skills"
+
+    async with AsyncSessionLocal() as db:
+        # ── 1. Seed skills from .md files ──────────────────────────────────────
+        seeded_skill_names = []
+        if skills_dir.exists():
+            for md_file in sorted(skills_dir.glob("*.md")):
+                try:
+                    raw = md_file.read_text(encoding="utf-8")
+                    # Parse YAML frontmatter
+                    frontmatter = {}
+                    body = raw
+                    fm_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', raw, re.DOTALL)
+                    if fm_match and HAS_YAML:
+                        try:
+                            frontmatter = yaml.safe_load(fm_match.group(1)) or {}
+                        except Exception:
+                            frontmatter = {}
+                        body = raw[fm_match.end():]
+                    elif fm_match:
+                        body = raw[fm_match.end():]
+
+                    skill_name = frontmatter.get("name") or md_file.stem
+                    version = str(frontmatter.get("version", "1.0.0"))
+                    description = frontmatter.get("description", "")
+                    category = frontmatter.get("category", "tax")
+                    tags = frontmatter.get("tags") or []
+                    applicable_bots = frontmatter.get("bots") or []
+
+                    await db.execute(text("""
+                        INSERT INTO taxlegal.skills
+                            (name, version, description, category, tags, applicable_bots,
+                             content_markdown, frontmatter, is_active, is_builtin)
+                        VALUES
+                            (:name, :version, :description, :category, :tags, :applicable_bots,
+                             :content_markdown, :frontmatter, TRUE, TRUE)
+                        ON CONFLICT (name) DO UPDATE SET
+                            version = EXCLUDED.version,
+                            description = EXCLUDED.description,
+                            category = EXCLUDED.category,
+                            tags = EXCLUDED.tags,
+                            applicable_bots = EXCLUDED.applicable_bots,
+                            content_markdown = EXCLUDED.content_markdown,
+                            frontmatter = EXCLUDED.frontmatter,
+                            updated_at = NOW()
+                    """), {
+                        "name": skill_name,
+                        "version": version,
+                        "description": description,
+                        "category": category,
+                        "tags": tags,
+                        "applicable_bots": applicable_bots,
+                        "content_markdown": body.strip(),
+                        "frontmatter": json.dumps(frontmatter),
+                    })
+                    seeded_skill_names.append(skill_name)
+                    logger.info(f"Seeded skill: {skill_name}")
+                except Exception as e:
+                    logger.warning(f"Failed to seed skill {md_file}: {e}")
+        else:
+            logger.info("No /skills/ directory found — skipping skill file seed")
+
+        await db.commit()
+
+        # ── 2. Seed BotVariants ────────────────────────────────────────────────
+        for bv in DEFAULT_BOT_VARIANTS:
+            await db.execute(text("""
+                INSERT INTO taxlegal.bot_variants
+                    (name, slug, role, description, system_prompt_base, skill_ids,
+                     is_builtin, is_active)
+                VALUES
+                    (:name, :slug, :role, :description, :system_prompt_base, :skill_ids,
+                     :is_builtin, :is_active)
+                ON CONFLICT (slug) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    role = EXCLUDED.role,
+                    description = EXCLUDED.description,
+                    is_active = EXCLUDED.is_active,
+                    updated_at = NOW()
+            """), {
+                "name": bv["name"],
+                "slug": bv["slug"],
+                "role": bv["role"],
+                "description": bv["description"],
+                "system_prompt_base": bv.get("system_prompt_base"),
+                "skill_ids": bv.get("skill_ids", []),
+                "is_builtin": bv.get("is_builtin", True),
+                "is_active": bv.get("is_active", True),
+            })
+        await db.commit()
+        logger.info("BotVariants seeded.")
+
+        # ── 3. Seed PipelineTemplates ──────────────────────────────────────────
+        for pt in DEFAULT_PIPELINE_TEMPLATES:
+            await db.execute(text("""
+                INSERT INTO taxlegal.pipeline_templates
+                    (name, slug, description, practice_area, step_config, is_default, is_active)
+                VALUES
+                    (:name, :slug, :description, :practice_area, :step_config, :is_default, :is_active)
+                ON CONFLICT (slug) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    description = EXCLUDED.description,
+                    practice_area = EXCLUDED.practice_area,
+                    step_config = EXCLUDED.step_config,
+                    is_default = EXCLUDED.is_default,
+                    is_active = EXCLUDED.is_active,
+                    updated_at = NOW()
+            """), {
+                "name": pt["name"],
+                "slug": pt["slug"],
+                "description": pt["description"],
+                "practice_area": pt["practice_area"],
+                "step_config": json.dumps(pt["step_config"]),
+                "is_default": pt["is_default"],
+                "is_active": pt["is_active"],
+            })
+        await db.commit()
+        logger.info("PipelineTemplates seeded.")
+
+        # ── 4. Link skill_ids to bots ─────────────────────────────────────────
+        for bot_slug, skill_names in BOT_SKILL_LINKS.items():
+            if not skill_names:
+                continue
+            # Get skill IDs
+            placeholders = ", ".join([f":s{i}" for i in range(len(skill_names))])
+            params = {f"s{i}": name for i, name in enumerate(skill_names)}
+            result = await db.execute(
+                text(f"SELECT id FROM taxlegal.skills WHERE name IN ({placeholders})"),
+                params,
+            )
+            skill_ids = [row[0] for row in result.fetchall()]
+            if skill_ids:
+                await db.execute(text("""
+                    UPDATE taxlegal.bot_variants
+                    SET skill_ids = :skill_ids, updated_at = NOW()
+                    WHERE slug = :slug
+                """), {"skill_ids": skill_ids, "slug": bot_slug})
+                logger.info(f"Linked skills {skill_ids} to bot variant '{bot_slug}'")
+
+        await db.commit()
+        logger.info("Skill–BotVariant links updated.")
+
+    logger.info("seed_skills_and_bots() complete.")

@@ -8,11 +8,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
-from backend.startup import run_startup
+from backend.startup import run_startup, seed_skills_and_bots
 from backend.routes.auth import router as auth_router
 from backend.routes.matters import router as matters_router
 from backend.routes.admin import router as admin_router
 from backend.routes.laws import router as laws_router
+from backend.routes.skills import router as skills_router
 from backend.config import APP_PORT
 
 # Legal Agent module
@@ -34,6 +35,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting TaxLegal AI...")
     await run_startup()
+    await seed_skills_and_bots()
     await run_legalai_startup()
     logger.info("Startup complete.")
     yield
@@ -60,6 +62,7 @@ app.include_router(auth_router)
 app.include_router(matters_router)
 app.include_router(admin_router)
 app.include_router(laws_router)
+app.include_router(skills_router)
 
 # Legal Agent module routes
 app.include_router(legalai_search.router)

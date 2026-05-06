@@ -87,3 +87,31 @@ export const lawsApi = {
 
 // ── Models ────────────────────────────────────────────────────────────────────
 export const getModels = () => api.get("/api/models");
+
+// ── Skills ────────────────────────────────────────────────────────────────────
+export const skillsApi = {
+  list: () => api.get('/api/admin/skills'),
+  get: (id: number) => api.get(`/api/admin/skills/${id}`),
+  create: (data: any) => api.post('/api/admin/skills', data),
+  update: (id: number, data: any) => api.put(`/api/admin/skills/${id}`, data),
+  delete: (id: number) => api.delete(`/api/admin/skills/${id}`),
+};
+
+// ── Bot Variants ──────────────────────────────────────────────────────────────
+export const botVariantsApi = {
+  list: () => api.get('/api/admin/bot-variants'),
+  get: (id: number) => api.get(`/api/admin/bot-variants/${id}`),
+  create: (data: any) => api.post('/api/admin/bot-variants', data),
+  update: (id: number, data: any) => api.put(`/api/admin/bot-variants/${id}`, data),
+  delete: (id: number) => api.delete(`/api/admin/bot-variants/${id}`),
+};
+
+// ── Pipeline Templates ────────────────────────────────────────────────────────
+export const pipelineTemplatesApi = {
+  list: () => api.get('/api/admin/pipeline-templates'),
+  listPublic: () => api.get('/api/pipeline-templates'),
+  get: (id: number) => api.get(`/api/admin/pipeline-templates/${id}`),
+  create: (data: any) => api.post('/api/admin/pipeline-templates', data),
+  update: (id: number, data: any) => api.put(`/api/admin/pipeline-templates/${id}`, data),
+  delete: (id: number) => api.delete(`/api/admin/pipeline-templates/${id}`),
+};

@@ -20,6 +20,7 @@ class CreateMatterRequest(BaseModel):
     practice_area: str = "tax"
     pipeline_mode: str = "manual"  # manual | auto
     model_override: Optional[str] = None
+    pipeline_template_id: Optional[int] = None
 
 
 class MatterSummary(BaseModel):
@@ -87,6 +88,7 @@ async def create_matter(
         pipeline_mode=req.pipeline_mode,
         status="draft",
         current_step=0,
+        pipeline_template_id=req.pipeline_template_id,
     )
     db.add(matter)
     await db.commit()
