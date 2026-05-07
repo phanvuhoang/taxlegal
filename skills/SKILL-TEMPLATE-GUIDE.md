@@ -1,149 +1,265 @@
----
-name: SKILL-TEMPLATE-GUIDE
-version: 1.0.0
-description: >
-  Hướng dẫn tạo skill mới cho TaxLegal AI — format chuẩn, các section bắt buộc,
-  tips để viết skill hiệu quả. Tham khảo trước khi tạo skill mới.
-category: guide
-tags: [guide, template, how-to]
-applicable_bots: []
-editable: true
+# SKILL TEMPLATE GUIDE — TaxLegal AI
+
+> Tài liệu hướng dẫn nội bộ. Không phải skill. Không inject vào system prompt.
+
 ---
 
-# Hướng dẫn Tạo Skill mới — TaxLegal AI
+## Overview
 
-## Skill là gì?
+Hướng dẫn tạo skill mới cho hệ thống TaxLegal AI. Skills được inject **toàn bộ** vào system prompt dưới section `## SKILLS ACTIVATED` trong mỗi pipeline step.
 
-Skill là một file Markdown (.md) chứa kiến thức chuyên sâu được **inject vào system prompt của bot** khi chạy pipeline. Bot sẽ sử dụng nội dung skill như "sách tham chiếu" khi phân tích và viết tư vấn.
+Mỗi skill là một file `.md` gồm hai phần:
+1. **YAML frontmatter** (`---` ... `---`): metadata để hệ thống phân loại, gán bot, và lọc skill
+2. **Markdown body**: nội dung kỹ thuật được inject vào prompt
 
-## Format chuẩn
+Chất lượng của skill quyết định trực tiếp chất lượng đầu ra của AI. Một skill tốt = AI đưa ra vị trí thuế chính xác, có trích dẫn, và nhất quán.
 
-### Frontmatter (YAML, bắt buộc)
+---
+
+## Skill Taxonomy (từ kiến trúc openaccountants)
+
+Mỗi skill thuộc một trong 5 category chức năng:
+
+| # | Category | Mục đích | Ví dụ |
+|---|---------|---------|-------|
+| 1 | **Intake** | Checklist làm rõ thông tin, template thu thập dữ liệu đầu vào | Intake checklist cho FCT khi chưa rõ loại dịch vụ |
+| 2 | **Computation** | Bảng thuế suất, công thức tính toán, kiểm tra ngưỡng | Tính giá tính TTĐB, tính IQR transfer pricing |
+| 3 | **Decision Support** | Phân tích kịch bản, cờ rủi ro, mặc định thận trọng | Quyết định áp dụng DTA hay không |
+| 4 | **Return Assembly** | Checklist kê khai, lịch deadline, mapping mẫu tờ khai | Checklist quyết toán CIT năm |
+| 5 | **Advisory Memo** | Template phân tích đầu ra có cấu trúc | Memo phân tích rủi ro TP cho khách hàng FDI |
+
+Một file skill có thể bao gồm nhiều category (ví dụ: vietnam-fct.md bao gồm cả Computation + Decision Support + Return Assembly).
+
+---
+
+## Frontmatter Fields
+
+Tất cả các trường YAML frontmatter hợp lệ:
+
+| Trường | Kiểu | Bắt buộc | Mô tả | Ví dụ |
+|--------|------|---------|-------|-------|
+| `name` | string | ✅ | Slug duy nhất, viết thường, dùng dấu gạch nối | `vietnam-fct` |
+| `version` | semver | ✅ | Phiên bản skill | `1.0.0` |
+| `description` | string | ✅ | Mô tả một dòng (hoặc block `>`) | `Vietnam FCT — withholding tax on payments to foreign entities` |
+| `category` | enum | ✅ | `tax` \| `legal` \| `compliance` \| `advisory` | `tax` |
+| `tags` | list | ✅ | Từ khóa viết thường để tìm kiếm | `[fct, withholding-tax, vietnam]` |
+| `applicable_bots` | list | ✅ | Bot roles được dùng skill này | `[partner, ja, sa]` |
+| `editable` | boolean | ❌ | Cho phép admin chỉnh sửa qua UI | `true` |
+
+### Bot Roles
+
+| Role | Viết tắt | Mô tả |
+|------|---------|-------|
+| `intake` | Intake Bot | Thu thập thông tin từ khách hàng |
+| `partner` | Partner Bot | Phân tích pháp lý chuyên sâu, ra vị trí thuế |
+| `sa` | Senior Associate Bot | Nghiên cứu, phân tích, dự thảo memo |
+| `ja` | Junior Associate Bot | Tra cứu căn cứ pháp lý, tính toán đơn giản |
+
+### Ví dụ frontmatter đầy đủ
 
 ```yaml
 ---
-name: tên-skill-lowercase-gach-ngang   # unique ID, không dấu, không khoảng trắng
-version: 1.0.0                          # semantic versioning
+name: vietnam-fct
+version: 1.0.0
 description: >
-  Mô tả ngắn: skill dùng cho gì, ai dùng, trong tình huống nào (2-3 câu)
-category: tax|legal|advisory|compliance|guide  # chọn 1
-tags: [tag1, tag2, tag3]               # keywords giúp tìm kiếm
-applicable_bots: [partner, ja, sa]     # bot nào dùng skill này. [] = tất cả
-editable: true                         # luôn để true
+  Vietnam Foreign Contractor Tax (FCT) — withholding tax on payments to foreign entities.
+  Covers Circular 103/2014/TT-BTC, taxable subjects, VAT + CIT rates, three payment methods,
+  DTA override, and conservative defaults for uncertain cases.
+category: tax
+tags: [fct, withholding-tax, foreign-contractor, vietnam, circular-103]
+applicable_bots: [partner, ja, sa]
+editable: true
 ---
 ```
 
-### Body (Markdown)
+---
+
+## Conservative Defaults Principle (Nguyên tắc Mặc định Thận trọng)
+
+**Mọi skill phải có section này.** Đây là "hợp đồng 3 trạng thái" của AI:
+
+| Trạng thái | Điều kiện | Hành động của AI |
+|-----------|----------|-----------------|
+| ✅ **Clean** | Luật rõ ràng + dữ kiện đầy đủ | Đưa ra vị trí dứt khoát, trích dẫn điều khoản cụ thể |
+| ⚠️ **Conservative Default** | Luật hoặc dữ kiện không chắc chắn | Chọn phương án **tốn thuế hơn** (bảo vệ khách hàng khỏi rủi ro nộp thiếu) |
+| 🚫 **Refuse** | Thiếu dữ kiện cơ bản để phân tích | Yêu cầu làm rõ trước khi đưa ra bất kỳ vị trí nào |
+
+**Lý do**: Chi phí của "phạt nộp thiếu thuế" thường cao hơn chi phí của "nộp thừa thuế". AI phải bảo vệ khách hàng theo hướng an toàn hơn khi không chắc chắn.
+
+**Ví dụ áp dụng trong skill FCT:**
+```markdown
+| Không xác định được loại dịch vụ | Áp dụng CIT 10% (mức cao nhất) |
+| Không có chứng nhận cư trú DTA   | Không áp dụng DTA — khấu trừ nội địa |
+```
+
+---
+
+## Citation Discipline (Kỷ luật Trích dẫn)
+
+**Quy tắc vàng**: Mọi vị trí thuế đều phải có trích dẫn. Không có trích dẫn = không có vị trí.
+
+### Cấu trúc trích dẫn bắt buộc
+
+```
+1. Nguồn sơ cấp:  [Tên luật/nghị định/thông tư] + [Điều/Khoản/Điểm cụ thể]
+2. Nguồn thứ cấp: Công văn hướng dẫn của TCT/BTC (nếu có)
+```
+
+### Ví dụ trích dẫn đúng
 
 ```markdown
-# Skill: [Tên đầy đủ]
-
-## Căn cứ pháp lý (nếu là tax/legal skill)
-Bảng tóm tắt văn bản pháp luật liên quan.
-
-## [Nội dung chính — chia sections rõ ràng]
-
-## Các trường hợp thực tế / Ví dụ
-Ít nhất 1-2 case study thực tế.
-
-## Checklist
-- [ ] Các bước kiểm tra quan trọng
+Chi phí lãi vay liên kết không được vượt quá 30% EBITDA 
+(Điều 16, Nghị định 132/2020/NĐ-CP).
 ```
 
-## Các loại Skill phù hợp
+### Ví dụ trích dẫn sai (không chấp nhận)
 
-### 1. Computation Skills (Tính toán)
-Mục tiêu: giúp bot tính đúng số thuế, áp đúng thuế suất.
-
-Bắt buộc có:
-- Bảng thuế suất với nguồn trích dẫn (số văn bản cụ thể)
-- Công thức tính thuế từng bước
-- Điều kiện áp dụng (khi nào dùng, khi nào không)
-- Ví dụ số cụ thể
-
-### 2. Advisory Skills (Tư vấn chiến lược)
-Mục tiêu: giúp bot tư vấn chiến lược, lập kế hoạch thuế.
-
-Bắt buộc có:
-- Framework phân tích (bước 1, 2, 3...)
-- Cơ hội tối ưu hóa hợp pháp
-- Rủi ro cần tránh
-- Anti-patterns (những gì KHÔNG làm)
-
-### 3. Compliance Skills (Tuân thủ)
-Mục tiêu: giúp bot kiểm tra tuân thủ, phát hiện vi phạm.
-
-Bắt buộc có:
-- Checklist các nghĩa vụ
-- Deadline kê khai, nộp thuế
-- Mức phạt vi phạm
-- Thủ tục xử lý khi vi phạm
-
-### 4. Writing/Format Skills (Viết bài)
-Mục tiêu: hướng dẫn bot viết đúng format, đúng văn phong.
-
-Bắt buộc có:
-- Cấu trúc bài viết (outline)
-- Yêu cầu về ngôn ngữ, văn phong
-- Template/mẫu cụ thể
-- Anti-patterns về văn phong
-
-## Tips viết Skill hiệu quả
-
-### DO ✅
-- **Cụ thể**: Luôn ghi rõ số văn bản, điều, khoản (VD: "Điều 9 Khoản 2 TT78/2014" thay vì "theo quy định")
-- **Có số liệu**: Thuế suất, mức phạt, deadline cụ thể
-- **Có ví dụ**: Ít nhất 1 case study thực tế với số cụ thể
-- **Dùng bảng**: Thông tin so sánh, thuế suất → dùng bảng Markdown
-- **Checklist**: Kết thúc bằng checklist ngắn gọn
-- **Cập nhật ngày**: Ghi rõ "cập nhật đến [năm]" để biết khi nào cần review
-- **Phân biệt còn/hết hiệu lực**: Dùng ⚠️ cho văn bản hết hiệu lực
-
-### DON'T ❌
-- Viết quá dài (>3000 từ) — bot có giới hạn context
-- Trùng lặp nội dung với skill khác — link thay vì copy
-- Dùng thuật ngữ mơ hồ ("theo quy định", "có thể", "thường là")
-- Bỏ qua exceptions và edge cases
-- Quên ghi nguồn cho số liệu/tỷ lệ
-
-## Taxonomy Skills theo openaccountants framework
-
-Tham khảo từ openaccountants.com — mỗi loại thuế nên có các skills:
-
-| Role | Mục đích |
-|------|---------|
-| **Intake** | Thu thập thông tin, xác định phạm vi áp dụng |
-| **Computation** | Tính toán thuế theo từng bước |
-| **Return** | Lập tờ khai, điền mẫu |
-| **Compliance** | Kiểm tra tuân thủ, checklist |
-| **Advisory** | Lập kế hoạch, tối ưu hóa hợp pháp |
-| **Writing** | Format và văn phong bài viết tư vấn |
-
-## Ví dụ: Cách đặt tên Skill
-
-```
-vietnam-cit         → CIT computation + rules
-vietnam-cit-return  → Hướng dẫn lập tờ khai TNDN
-vietnam-cit-advisory → CIT planning và tối ưu hóa
-vietnam-cit-compliance → Checklist tuân thủ CIT
-
-vietnam-vat         → VAT rules
-vietnam-vat-return  → Tờ khai GTGT
-vietnam-vat-advisory → VAT planning
+```markdown
+Chi phí lãi vay liên kết bị giới hạn.     ← Không có căn cứ pháp lý
+Chi phí lãi vay liên kết không được vượt 30% EBITDA theo quy định.  ← Thiếu số hiệu
 ```
 
-## Ghi nhớ về Bots
+### Bảng trích dẫn trong skill
 
-| Bot | Phù hợp với skill loại |
-|-----|----------------------|
-| **Partner** | Advisory, strategy, high-level review |
-| **JA (Junior Associate)** | Research, computation, detailed analysis |
-| **SA (Senior Associate)** | Compliance, quality check, adversarial review |
-| **Intake** | Intake, onboarding, fact gathering |
+Mỗi skill nên có bảng **Khung pháp lý hiện hành** ở đầu:
 
-## Quy trình cập nhật Skill
+```markdown
+| Văn bản | Số hiệu | Nội dung chính |
+|---------|---------|----------------|
+| Thông tư FCT | 103/2014/TT-BTC | Quy định chính về thuế nhà thầu |
+```
 
-1. Khi có văn bản pháp luật mới → mở skill liên quan → cập nhật section bị ảnh hưởng
-2. Tăng version (VD: 1.0.0 → 1.1.0)
-3. Ghi chú ở đầu file: "Cập nhật ngày DD/MM/YYYY — thêm quy định X"
-4. Kiểm tra xem Bot Variant nào đang dùng skill này → test lại
+---
+
+## Body Structure Template
+
+Cấu trúc chuẩn cho mọi skill (thứ tự section, không bỏ qua):
+
+```markdown
+# Skill: [Tên đầy đủ] — Việt Nam
+
+## Khung pháp lý hiện hành
+Bảng tham chiếu luật/nghị định/thông tư liên quan, có số hiệu.
+
+## [Tên chủ đề chính 1]
+Quy tắc cốt lõi, định nghĩa, điều kiện áp dụng.
+
+## Bảng thuế suất / Công thức tính (nếu có)
+Bảng thuế suất đầy đủ + ví dụ tính toán.
+
+## Nguyên tắc Mặc định Thận trọng (Conservative Defaults)
+Bảng tình huống → mặc định thận trọng.
+
+## Lịch tuân thủ / Deadline (nếu có)
+Bảng deadline kê khai và nộp thuế.
+
+## Checklist thực hành
+Danh sách checkbox để JA/SA kiểm tra.
+```
+
+### Các section tùy chọn (thêm khi phù hợp)
+
+- `## Ví dụ tính toán` — walkthrough số liệu cụ thể
+- `## Trường hợp đặc biệt / Ngoại lệ`
+- `## Rủi ro thường gặp`
+- `## Quy trình thủ tục` — các bước hành chính
+
+---
+
+## Example: Minimal Skill
+
+Ví dụ skill tối thiểu hợp lệ (dùng FCT làm minh họa):
+
+```markdown
+---
+name: vietnam-fct-minimal
+version: 1.0.0
+description: FCT minimal example — withholding on payments to foreign contractors
+category: tax
+tags: [fct, vietnam]
+applicable_bots: [ja]
+editable: true
+---
+
+# Skill: Thuế Nhà thầu (FCT) — Tóm tắt
+
+## Khung pháp lý hiện hành
+
+| Văn bản | Số hiệu | Nội dung chính |
+|---------|---------|----------------|
+| Thông tư FCT | 103/2014/TT-BTC | Quy định chính về thuế nhà thầu |
+
+## Mức thuế suất mặc định
+
+Khi không xác định được phân loại dịch vụ:
+- VAT: **5%** trên doanh thu
+- CIT: **5%** trên doanh thu
+
+Mức tổng hợp mặc định: **10% trên doanh thu thanh toán**.
+
+## Nguyên tắc Mặc định Thận trọng
+
+| Tình huống | Mặc định |
+|-----------|---------|
+| Không rõ loại dịch vụ | CIT 10% (mức cao nhất) |
+| Không có DTA / chứng nhận cư trú | Áp dụng thuế nội địa đầy đủ |
+
+## Checklist thực hành
+
+- [ ] Xác định phương pháp nộp (PP1/PP2/PP3)
+- [ ] Khai và nộp trong 10 ngày kể từ ngày trả tiền (PP1)
+```
+
+---
+
+## Linking Skills to BotVariants
+
+### Kiến trúc hệ thống
+
+```
+Skill file (.md)
+    ↓  gán qua Admin UI hoặc config
+BotVariant (e.g. "partner-bot-v2")
+    ↓  sử dụng trong
+PipelineTemplate Step (e.g. "analysis-step")
+    ↓  inject vào
+System Prompt → AI nhận được skill content
+```
+
+### Quy trình gán skill
+
+1. **Admin → Skills**: Upload hoặc chỉnh sửa file skill `.md`
+2. **Admin → BotVariants**: Chọn BotVariant cần gán skill
+3. **Assign Skills**: Chọn skill từ danh sách (lọc theo `applicable_bots`)
+4. **BotVariant → PipelineTemplate**: Gán BotVariant vào step cụ thể trong pipeline
+
+### Quy tắc gán skill theo bot role
+
+| BotVariant | Skills nên gán |
+|-----------|---------------|
+| `intake-bot` | Skills category `intake`, checklist thu thập thông tin |
+| `ja-bot` | Skills computation, rate tables, deadline calendars |
+| `sa-bot` | Skills computation + decision support + return assembly |
+| `partner-bot` | Tất cả skills liên quan + advisory memo templates |
+
+### Lưu ý version control
+
+- Mỗi khi cập nhật nội dung skill, tăng version theo semver (`1.0.0` → `1.1.0` cho minor update, `2.0.0` cho breaking change)
+- Ghi chú thay đổi trong comment đầu file hoặc CHANGELOG riêng
+- Kiểm tra lại các BotVariant đang dùng skill sau mỗi lần cập nhật lớn
+
+---
+
+## Quy trình Review Skill mới
+
+Trước khi deploy skill vào production:
+
+1. **Technical review**: Kiểm tra frontmatter đúng schema, markdown render đúng
+2. **Legal review**: Partner review tất cả vị trí thuế và trích dẫn
+3. **Conservative defaults**: Xác nhận bảng mặc định thận trọng đầy đủ và đúng hướng
+4. **Test prompt**: Chạy thử skill trong môi trường staging với 3–5 câu hỏi điển hình
+5. **Deploy**: Gán skill vào BotVariant tương ứng
+
+---
+
+*Tài liệu này được duy trì bởi nhóm TaxLegal AI. Cập nhật lần cuối: 2025.*

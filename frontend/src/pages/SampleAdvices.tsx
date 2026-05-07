@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi } from "../lib/api";
-import { BookOpen, Plus, Trash2, Star } from "lucide-react";
+import { BookOpen, Plus, Trash2, Star, Search, X } from "lucide-react";
 import { isAdmin } from "../lib/auth";
 import toast from "react-hot-toast";
 import ReactMarkdown from "react-markdown";
@@ -11,6 +11,11 @@ export default function SampleAdvices() {
   const [selected, setSelected] = useState<any>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ title: "", practice_area: "tax", tags: "", client_question: "", content_markdown: "" });
+
+  // Search & filter state
+  const [search, setSearch] = useState("");
+  const [filterArea, setFilterArea] = useState("");
+  const [filterTag, setFilterTag] = useState("");
 
   const load = () => adminApi.listSampleAdvices().then((r) => setAdvices(r.data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -43,6 +48,32 @@ export default function SampleAdvices() {
       load();
     } catch { toast.error("Lỗi"); }
   };
+
+  // Derive all unique tags across all advices for the tag filter dropdown
+  const allTags = Array.from(
+    new Set(advices.flatMap((a) => a.tags || []))
+  ).sort();
+
+  // Client-side filtering
+  const filtered = advices.filter((a) => {
+    const lowerSearch = search.toLowerCase();
+    const matchesSearch =
+      !search ||
+      a.title?.toLowerCase().includes(lowerSearch) ||
+      a.client_question?.toLowerCase().includes(lowerSearch) ||
+      a.content_markdown?.toLowerCase().includes(lowerSearch);
+    const matchesArea = !filterArea || a.practice_area === filterArea;
+    const matchesTag = !filterTag || (a.tags || []).includes(filterTag);
+    return matchesSearch && matchesArea && matchesTag;
+  });
+
+  const clearFilters = () => {
+    setSearch("");
+    setFilterArea("");
+    setFilterTag("");
+  };
+
+  const hasFilters = search || filterArea || filterTag;
 
   return (
     <div>
@@ -88,13 +119,75 @@ export default function SampleAdvices() {
         </div>
       )}
 
+      {/* Search & Filter Bar */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {/* Search input */}
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400 pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Tìm theo tiêu đề, nội dung, câu hỏi..."
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+          />
+          {search && (
+            <button onClick={() => setSearch("")}
+              className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        {/* Practice area filter */}
+        <select
+          value={filterArea}
+          onChange={(e) => setFilterArea(e.target.value)}
+          className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+        >
+          <option value="">Tất cả lĩnh vực</option>
+          <option value="tax">Tax</option>
+          <option value="legal">Legal</option>
+          <option value="both">Cả hai</option>
+        </select>
+
+        {/* Tag filter */}
+        {allTags.length > 0 && (
+          <select
+            value={filterTag}
+            onChange={(e) => setFilterTag(e.target.value)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            <option value="">Tất cả tags</option>
+            {allTags.map((tag) => (
+              <option key={tag} value={tag}>{tag}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Clear filters */}
+        {hasFilters && (
+          <button onClick={clearFilters}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+            <X className="w-3.5 h-3.5" />
+            Xóa lọc
+          </button>
+        )}
+
+        {/* Results count */}
+        <span className="flex items-center px-2 text-sm text-gray-400">
+          {filtered.length}/{advices.length} bài
+        </span>
+      </div>
+
       <div className="grid md:grid-cols-3 gap-6">
         {/* List */}
         <div className="md:col-span-1">
           <div className="space-y-2">
-            {advices.length === 0 ? (
-              <div className="card text-center text-gray-400 text-sm py-8">Chưa có bài mẫu nào</div>
-            ) : advices.map((a) => (
+            {filtered.length === 0 ? (
+              <div className="card text-center text-gray-400 text-sm py-8">
+                {advices.length === 0 ? "Chưa có bài mẫu nào" : "Không tìm thấy bài mẫu phù hợp"}
+              </div>
+            ) : filtered.map((a) => (
               <button
                 key={a.id}
                 onClick={() => handleView(a.id)}

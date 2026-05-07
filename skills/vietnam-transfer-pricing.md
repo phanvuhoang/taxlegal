@@ -2,107 +2,150 @@
 name: vietnam-transfer-pricing
 version: 1.0.0
 description: >
-  Skill chuyên sâu về Giá chuyển nhượng (Transfer Pricing) tại Việt Nam theo NĐ132/2020/NĐ-CP
-  và TT45/2021/TT-BTC. Bao gồm xác định bên liên kết, các phương pháp định giá, hồ sơ
-  giá chuyển nhượng (Local File, Master File, CbCR), và thin cap rule.
+  Vietnam Transfer Pricing — Decree 132/2020, arm's length principle, TP methods,
+  documentation requirements (local file/master file/CbCR), APA, and conservative defaults.
 category: tax
-tags: [transfer-pricing, chuyen-gia, related-party, arm-length, vietnam]
+tags: [transfer-pricing, gia-chuyen-nhuong, decree-132, arm-length, apa, giao-dich-lien-ket, vietnam]
 applicable_bots: [partner, ja, sa]
 editable: true
 ---
 
 # Skill: Giá chuyển nhượng (Transfer Pricing) — Việt Nam
 
-## Căn cứ pháp lý
+## Khung pháp lý hiện hành
 
-| Văn bản | Số hiệu | Hiệu lực |
-|---------|---------|---------|
-| Nghị định | **NĐ132/2020/NĐ-CP** | Từ 20/12/2020 (thay NĐ20/2017) |
-| Thông tư | **TT45/2021/TT-BTC** | Từ 03/8/2021 |
-| Luật TNDN | 14/2008/QH12 sửa đổi | Cơ sở pháp lý |
+| Văn bản | Số hiệu | Nội dung chính |
+|---------|---------|----------------|
+| Nghị định TP hiện hành | 132/2020/NĐ-CP | Quy định chính (thay NĐ20/2017) |
+| Thông tư hướng dẫn | 45/2021/TT-BTC | Hướng dẫn NĐ132 |
+| NĐ cũ (tham chiếu) | 20/2017/NĐ-CP (sửa 68/2020) | Đã thay thế bởi NĐ132 |
+| Thông tư cũ (tham chiếu) | 41/2017/TT-BTC | Đã thay thế bởi TT45/2021 |
+| BEPS Action 13 | OECD 2015 | Tiêu chuẩn quốc tế — VN áp dụng |
 
-## Xác định Bên liên kết (Điều 5, NĐ132/2020)
+## Định nghĩa Giao dịch Liên kết
 
-**Các trường hợp bên liên kết:**
+**Theo Điều 5, NĐ 132/2020** — Hai bên có quan hệ liên kết khi:
 
-1. Cùng góp ≥25% vốn điều lệ/vốn cổ phần có quyền biểu quyết
-2. Một bên trực tiếp/gián tiếp sở hữu ≥25% của bên kia
-3. Cùng do một bên thứ ba sở hữu ≥25%
-4. Bên kiểm soát thành viên HĐQT/BKS/Ban lãnh đạo
-5. Các bên cùng bảo lãnh cho nhau hoặc có vay từ một bên chiếm ≥25% vốn chủ sở hữu
-6. Các bên thực hiện giao dịch chiếm ≥50% doanh thu/mua hàng
-7. Mối quan hệ gia đình, vợ/chồng, cha mẹ, con cái... trong kinh doanh
+| Tiêu chí | Ngưỡng |
+|---------|-------|
+| Sở hữu vốn trực tiếp/gián tiếp | **≥ 25%** |
+| Cho vay / bảo lãnh vốn | ≥ 25% vốn góp |
+| Kiểm soát Hội đồng quản trị | ≥ 1/3 thành viên HĐQT |
+| Tổng giám đốc/Giám đốc chung | Cùng người điều hành |
+| Tham gia chương trình hợp tác kinh doanh | Được xem là liên kết theo thỏa thuận |
+| Giao dịch với bên tại thiên đường thuế | Tự động coi là liên kết nếu giao dịch qua jurisdictions không minh bạch |
 
-## Các phương pháp định giá giao dịch liên kết
+## Nguyên tắc Giá thị trường (Arm's Length Principle)
 
-| Phương pháp | Viết tắt | Áp dụng khi |
-|------------|---------|-------------|
-| So sánh giá thị trường | **CUP** | Có giao dịch tương đương trên thị trường |
-| Giá bán trừ lợi nhuận | **RPM** | Phân phối/bán lại không qua chế biến |
-| Giá vốn cộng lãi | **CPM** | Sản xuất, gia công |
-| Biên lợi nhuận giao dịch thuần | **TNMM** | Phổ biến nhất — so sánh biên lợi nhuận |
-| Phân bổ lợi nhuận | **PSM** | Giao dịch phức tạp, có tài sản vô hình độc đáo |
+**Định nghĩa**: Giao dịch giữa các bên liên kết phải được thực hiện theo điều kiện và giá cả như giữa các bên độc lập trong điều kiện tương đương.
 
-**Thứ tự ưu tiên:** CUP → RPM/CPM → TNMM → PSM
+**Quy trình phân tích arm's length:**
+1. **Phân tích chức năng, tài sản, rủi ro (FAR)**: Xác định vai trò của từng bên
+2. **Phân tích có thể so sánh (Comparables)**: Tìm giao dịch/doanh nghiệp có thể so sánh
+3. **Chọn phương pháp TP phù hợp**
+4. **Tính khoảng arm's length (IQR)**
+5. **So sánh và điều chỉnh nếu cần**
 
-## Hồ sơ giá chuyển nhượng (TP Documentation)
+## 5 Phương pháp Giá chuyển nhượng
 
-### Mẫu 01/TKQ-TNDN (bắt buộc nộp cùng tờ khai TNDN)
+| Phương pháp | Tên tiếng Anh | Ưu tiên áp dụng |
+|------------|--------------|----------------|
+| **CUP** | Comparable Uncontrolled Price | Ưu tiên 1 — khi có giao dịch so sánh được trực tiếp |
+| **RPM** | Resale Price Method | Cho nhà phân phối/bán lại không gia tăng giá trị đáng kể |
+| **CPM** | Cost Plus Method | Cho nhà sản xuất/cung cấp dịch vụ đơn giản |
+| **TNMM** | Transactional Net Margin Method | Phổ biến nhất trong thực tế VN |
+| **PSM** | Profit Split Method | Giao dịch phức tạp, tài sản vô hình độc đáo |
 
-Tất cả DN có giao dịch liên kết phải nộp Mẫu 01/TKQ-TNDN kèm tờ khai TNDN năm, trừ khi được miễn.
+**Thực tế**: TNMM chiếm đa số trong hồ sơ TP Việt Nam vì dễ tìm comparables nhất.
 
-**Trường hợp được miễn nộp Mẫu 01:**
-- Doanh thu <200 tỷ VND VÀ chỉ giao dịch với bên liên kết trong VN (cùng áp thuế suất)
-- Người nộp thuế đã được APA (thỏa thuận trước giá chuyển nhượng)
+## Khoảng Giá thị trường — IQR (Interquartile Range)
 
-### Hồ sơ Local File (Hồ sơ quốc gia)
+**Theo Điều 17, NĐ 132/2020:**
 
-**Bắt buộc khi:** Tổng doanh thu ≥200 tỷ VND HOẶC giao dịch liên kết >20 tỷ (mỗi loại)
+- Tính **khoảng tứ phân vị (IQR)** từ tập dữ liệu so sánh độc lập
+- **P25 (Q1)** → Giới hạn dưới của khoảng arm's length
+- **P75 (Q3)** → Giới hạn trên của khoảng arm's length
+- Nếu chỉ tiêu tài chính của giao dịch liên kết nằm trong khoảng [P25; P75] → được chấp nhận
+- Nếu nằm ngoài khoảng → CQT điều chỉnh về trung vị (**P50**)
 
-Nội dung gồm:
-1. Thông tin chung về DN và giao dịch liên kết
-2. Mô tả hoạt động kinh doanh, chuỗi giá trị
-3. Phân tích chức năng, tài sản, rủi ro (FAR analysis)
-4. Phân tích tương đương — so sánh với bên độc lập
-5. Kết quả và điều chỉnh (nếu cần)
+**Nguồn dữ liệu so sánh được chấp nhận**: Bureau van Dijk (Orbis), Bloomberg, Compustat, dữ liệu nội bộ đã công bố.
 
-### Hồ sơ Master File (Hồ sơ tập đoàn)
+## Yêu cầu Tài liệu Giá chuyển nhượng
 
-**Bắt buộc khi:** DN là thành viên của MNE có **tổng doanh thu hợp nhất toàn cầu ≥18.000 tỷ VND** (tương đương ~750 triệu EUR)
+### Cấu trúc 3 cấp (theo BEPS Action 13)
 
-### Country-by-Country Report (CbCR — Báo cáo lợi nhuận liên quốc gia)
+| Cấp | Tên | Nội dung | Đối tượng bắt buộc |
+|-----|-----|---------|-------------------|
+| **1** | Local File (Hồ sơ địa phương) | Thông tin DN tại VN, giao dịch liên kết, phân tích TP | Tất cả DN có giao dịch liên kết |
+| **2** | Master File (Hồ sơ tập đoàn) | Cấu trúc tập đoàn, chính sách TP toàn cầu, tài sản vô hình | DN có công ty mẹ nước ngoài, doanh thu tập đoàn ≥ VND 18,000 tỷ |
+| **3** | CbCR (Country-by-Country Report) | Phân bổ lợi nhuận, thuế theo từng quốc gia | Tập đoàn toàn cầu doanh thu ≥ EUR 750 triệu (VND 18,000 tỷ) |
 
-**Bắt buộc khi:** DN là công ty mẹ tối cao của MNE tại VN, tổng doanh thu hợp nhất ≥18.000 tỷ
-- Hoặc: DN VN được chỉ định thay mặt nhóm nộp CbCR tại VN
+### Mẫu kê khai giao dịch liên kết
 
-## Thin Capitalization Rule (Giới hạn lãi vay)
+| Mẫu | Nội dung | Nộp cùng |
+|-----|---------|---------|
+| **Phụ lục I/TNDN** (Mẫu 01) | Danh sách giao dịch liên kết | Tờ khai CIT năm |
+| **Phụ lục II/TNDN** (Mẫu 02) | Thông tin CbCR (nếu áp dụng) | Tờ khai CIT năm |
 
-**Quy định tại Điều 16, NĐ132/2020:**
+## Thời hạn lập tài liệu
 
-- Tổng chi phí lãi vay phát sinh trong kỳ (sau khi trừ lãi tiền gửi và cho vay) được giới hạn ở mức **30% EBITDA**
-- Phần vượt quá: chuyển sang tối đa **5 năm tiếp theo**
-- **Không áp dụng** cho: tổ chức tín dụng, công ty bảo hiểm, vay ODA, vay ưu đãi nhà nước
+**Nguyên tắc đồng thời (Contemporaneous)**:
+- Tài liệu TP phải được hoàn thành **trước ngày nộp tờ khai CIT** (tức là trước 31/03 năm sau)
+- Không được lập tài liệu hồi tố sau khi CQT thanh tra
+- CQT có quyền yêu cầu xuất trình tài liệu trong vòng **15 ngày làm việc** kể từ khi yêu cầu
 
-**Công thức:**
+## Safe Harbor (Trường hợp được miễn lập hồ sơ)
 
-```
-EBITDA = EBIT + Khấu hao + Phân bổ
-Chi phí lãi vay được trừ = min(Chi phí lãi vay ròng, 30% × EBITDA)
-```
+**Theo Điều 19, NĐ 132/2020** — DN được miễn lập Local File/Master File nếu:
 
-## APA — Thỏa thuận trước về giá chuyển nhượng
+| Điều kiện | Ngưỡng |
+|----------|-------|
+| Doanh thu < | VND 50 tỷ AND tổng giá trị giao dịch liên kết < VND 30 tỷ |
+| Đã ký APA | Và đang thực hiện đúng APA |
+| Chỉ giao dịch nội địa | Các bên đều chịu cùng mức thuế CIT tại VN, không được ưu đãi khác nhau |
 
-- DN có thể đăng ký APA với TCT để được xác nhận phương pháp TP trước
-- Thời hạn APA: tối đa 3 năm, gia hạn 2 năm
-- Miễn phạt và không bị điều chỉnh TP trong thời hạn APA nếu thực hiện đúng
+**Chú ý**: Miễn lập hồ sơ ≠ miễn khai Mẫu 01/TNDN — vẫn phải khai phụ lục giao dịch liên kết.
+
+## Thỏa thuận Định giá trước (APA — Advance Pricing Agreement)
+
+**Theo Điều 41–48, NĐ 132/2020:**
+
+| Loại APA | Nội dung |
+|---------|---------|
+| **Unilateral APA** | Thỏa thuận giữa DN và TCT VN |
+| **Bilateral APA** | Thỏa thuận giữa TCT VN và CQT nước đối tác (qua MAP) |
+| **Multilateral APA** | Nhiều nước tham gia (hiếm) |
+
+**Lợi ích APA**: Xác định phương pháp và khoảng giá chấp nhận trước → an toàn pháp lý trong thời hạn APA (3–5 năm, có thể gia hạn).
+
+**Hạn chế APA**: Chi phí cao, thời gian đàm phán dài (thường 1–3 năm), không phù hợp DN nhỏ.
+
+## Quy tắc Thin Capitalisation (Giới hạn lãi vay liên kết)
+
+**Theo Điều 16, NĐ 132/2020:**
+- Chi phí lãi vay ròng (sau khi trừ lãi tiền gửi, cho vay) **không được vượt 30% EBITDA**
+- Phần vượt được chuyển sang tối đa **5 năm** tiếp theo
+- Không áp dụng cho: ngân hàng, tổ chức tín dụng, bảo hiểm, các khoản vay ODA nhà nước
+
+## Nguyên tắc mặc định thận trọng (Conservative Defaults)
+
+| Tình huống | Mặc định |
+|-----------|---------|
+| Không chắc có đáp ứng safe harbor | Lập đầy đủ Local File để an toàn |
+| Chưa tìm được comparables đủ mạnh | Ghi nhận rủi ro, không đưa ra vị trí TP mà không có cơ sở |
+| Lãi vay liên kết gần 30% EBITDA | Lập tính toán chính xác, không dựa vào ước tính |
+| Nghi ngờ giao dịch vi phạm arm's length | Đề xuất điều chỉnh chủ động trước khi CQT phát hiện |
+| Tài liệu lập sau ngày nộp tờ khai | Không sử dụng — tài liệu hồi tố không có giá trị |
 
 ## Checklist Transfer Pricing
 
-- [ ] Xác định tất cả bên liên kết theo Điều 5 NĐ132?
-- [ ] Liệt kê tất cả giao dịch liên kết (loại, giá trị)?
-- [ ] Phải nộp Mẫu 01/TKQ-TNDN kèm tờ khai?
-- [ ] Có phải lập Local File không (>200 tỷ doanh thu)?
-- [ ] Có phải lập Master File không (>18.000 tỷ hợp nhất)?
-- [ ] Chi phí lãi vay liên kết ≤30% EBITDA?
-- [ ] Phần lãi vay vượt từ năm trước còn trong 5 năm?
-- [ ] Có thể cân nhắc APA không?
+- [ ] Xác định tất cả bên liên kết theo tiêu chí NĐ132 (≥25% ownership)
+- [ ] Liệt kê toàn bộ giao dịch liên kết và giá trị trong năm
+- [ ] Kiểm tra có đáp ứng safe harbor không
+- [ ] Chọn phương pháp TP phù hợp (ưu tiên CUP, thực tế thường TNMM)
+- [ ] Tìm và lọc comparables từ cơ sở dữ liệu tin cậy
+- [ ] Tính IQR và xác định khoảng arm's length
+- [ ] Hoàn thành Local File trước ngày 31/03
+- [ ] Điền Phụ lục 01/TNDN khi nộp CIT quyết toán
+- [ ] Kiểm tra chi phí lãi vay liên kết ≤ 30% EBITDA
+- [ ] Xem xét nộp APA nếu giao dịch liên kết lớn và thường xuyên

@@ -329,3 +329,93 @@ CREATE TABLE IF NOT EXISTS taxlegal.sample_writings (
     created_by INTEGER REFERENCES taxlegal.users(id),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ============================================================
+-- Law Documents (Văn bản Luật) — full text HTML storage
+-- ============================================================
+CREATE TABLE IF NOT EXISTS taxlegal.law_documents_v2 (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(1000) NOT NULL,
+    doc_number VARCHAR(200),          -- e.g. "103/2014/TT-BTC"
+    doc_type VARCHAR(100),            -- luat | nghi_dinh | thong_tu | van_ban_hop_nhat | cong_van | hiep_dinh
+    issuer VARCHAR(300),              -- e.g. "Bộ Tài chính"
+    issued_date DATE,
+    effective_date DATE,
+    content_html TEXT,                -- full HTML content
+    content_text TEXT,                -- stripped plain text for search/embedding
+    source_url VARCHAR(1000),
+    tags TEXT[] DEFAULT '{}',
+    is_priority BOOLEAN DEFAULT FALSE, -- marks as priority/anchor doc
+    embedding vector(1536),
+    ai_tagged BOOLEAN DEFAULT FALSE,
+    is_active BOOLEAN DEFAULT TRUE,
+    imported_from VARCHAR(50),        -- 'crawler' | 'upload' | 'dbvntax' | 'paste'
+    dbvntax_id INTEGER,               -- original ID in dbvntax postgres DB
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_law_documents_v2_doc_type ON taxlegal.law_documents_v2(doc_type);
+CREATE INDEX IF NOT EXISTS idx_law_documents_v2_is_priority ON taxlegal.law_documents_v2(is_priority);
+CREATE INDEX IF NOT EXISTS idx_law_documents_v2_tags ON taxlegal.law_documents_v2 USING GIN(tags);
+
+-- ============================================================
+-- Regulation references — for matters and writing jobs
+-- ============================================================
+CREATE TABLE IF NOT EXISTS taxlegal.matter_regulations (
+    id SERIAL PRIMARY KEY,
+    matter_id INTEGER NOT NULL REFERENCES taxlegal.matters(id) ON DELETE CASCADE,
+    law_doc_id INTEGER REFERENCES taxlegal.law_documents_v2(id),
+    uploaded_content TEXT,            -- if user uploads directly without saving to law_documents
+    uploaded_filename VARCHAR(500),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS taxlegal.writing_regulations (
+    id SERIAL PRIMARY KEY,
+    job_id INTEGER NOT NULL REFERENCES taxlegal.writing_jobs(id) ON DELETE CASCADE,
+    law_doc_id INTEGER REFERENCES taxlegal.law_documents_v2(id),
+    uploaded_content TEXT,
+    uploaded_filename VARCHAR(500),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- Document Analysis (Phân tích văn bản) — Module 3
+-- ============================================================
+CREATE TABLE IF NOT EXISTS taxlegal.doc_analysis_jobs (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(500),
+    uploaded_filename VARCHAR(500),
+    uploaded_content TEXT,            -- extracted text from PDF/DOCX/TXT
+    output_language VARCHAR(2) DEFAULT 'vi',
+    actions JSONB DEFAULT '[]',       -- list of action slugs + custom prompts
+    regulation_ids INTEGER[] DEFAULT '{}',
+    uploaded_regulation_texts TEXT[] DEFAULT '{}',
+    status VARCHAR(50) DEFAULT 'pending',  -- pending | analyzing | done | error
+    results JSONB DEFAULT '{}',       -- {action_slug: result_text}
+    bot_variant_id INTEGER,
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- Add review fields to writing_jobs
+-- ============================================================
+ALTER TABLE taxlegal.writing_jobs ADD COLUMN IF NOT EXISTS review_bot_variant_id INTEGER;
+ALTER TABLE taxlegal.writing_jobs ADD COLUMN IF NOT EXISTS review_content TEXT;
+ALTER TABLE taxlegal.writing_jobs ADD COLUMN IF NOT EXISTS review_status VARCHAR(50) DEFAULT 'none';
+-- 'none' | 'pending' | 'reviewing' | 'done' | 'error'
+
+-- ============================================================
+-- Add category/topic to sample_writings for filtering
+-- ============================================================
+ALTER TABLE taxlegal.sample_writings ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE taxlegal.sample_writings ADD COLUMN IF NOT EXISTS topic VARCHAR(300);
+
+-- ============================================================
+-- sample_advices category/topic columns (table already exists above)
+-- ============================================================
+ALTER TABLE taxlegal.sample_advices ADD COLUMN IF NOT EXISTS category VARCHAR(100);
+ALTER TABLE taxlegal.sample_advices ADD COLUMN IF NOT EXISTS topic VARCHAR(300);

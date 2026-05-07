@@ -139,7 +139,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "Bot tiếp nhận và xác minh sự kiện mặc định",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -149,7 +149,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "Partner Bot mặc định — lập brief và review chiến lược",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -159,7 +159,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "SA Bot mặc định — blueprint và adversarial review",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -169,7 +169,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "JA Bot mặc định — 5-phase research pipeline",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -179,7 +179,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "JA Bot chuyên viết advisory memo tư vấn thuế — dùng skill advisory-memo + tax-strategy",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -189,7 +189,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "JA Bot chuyên về compliance check — kiểm tra tuân thủ quy định thuế",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -199,7 +199,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "Partner Bot chuyên về Thuế TNDN (CIT) — dùng skill vietnam-cit",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -209,7 +209,7 @@ DEFAULT_BOT_VARIANTS = [
         "description": "Partner Bot chuyên về Thuế GTGT (VAT) — dùng skill vietnam-vat",
         "system_prompt_base": None,
         "skill_ids": [],
-        "is_builtin": True,
+        "is_builtin": False,
         "is_active": True,
     },
     {
@@ -455,6 +455,13 @@ async def seed_skills_and_bots():
     import re
     from pathlib import Path
 
+    # Fix existing is_builtin records
+    async with AsyncSessionLocal() as db:
+        await db.execute(text("UPDATE taxlegal.skills SET is_builtin = FALSE WHERE is_builtin = TRUE"))
+        await db.execute(text("UPDATE taxlegal.bot_variants SET is_builtin = FALSE WHERE is_builtin = TRUE"))
+        await db.commit()
+        logger.info("Cleared is_builtin flags on skills and bot_variants.")
+
     try:
         import yaml  # PyYAML
         HAS_YAML = True
@@ -548,7 +555,7 @@ async def seed_skills_and_bots():
                 "description": bv["description"],
                 "system_prompt_base": bv.get("system_prompt_base"),
                 "skill_ids": bv.get("skill_ids", []),
-                "is_builtin": bv.get("is_builtin", True),
+                "is_builtin": bv.get("is_builtin", False),
                 "is_active": bv.get("is_active", True),
             })
         await db.commit()

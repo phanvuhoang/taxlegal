@@ -7,7 +7,7 @@ import { writingApi, CONTENT_TYPES } from "../lib/writing";
 import { skillsApi, botVariantsApi } from "../lib/api";
 import {
   PenTool, ArrowLeft, ChevronDown, Loader2,
-  Languages, Bot, Target, FileText
+  Languages, Bot, Target, FileText, CheckCircle2
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -27,6 +27,7 @@ export default function WritingNew() {
     context: "",
     output_language: "vi",
     bot_variant_id: null as number | null,
+    review_bot_variant_id: null as number | null,
     skill_ids: [] as number[],
     word_count_target: 2000,
   });
@@ -54,6 +55,7 @@ export default function WritingNew() {
       const res = await writingApi.create({
         ...form,
         bot_variant_id: form.bot_variant_id || undefined,
+        review_bot_variant_id: form.review_bot_variant_id || undefined,
       });
       toast.success("Đã tạo bài viết");
       navigate(`/writing/${res.data.id}`);
@@ -64,7 +66,7 @@ export default function WritingNew() {
     }
   };
 
-  const jaRoleBots = bots.filter((b) => b.role === "ja");
+  const allBots = bots;
   const taxSkills = skills.filter((s) => s.category === "tax");
 
   return (
@@ -233,7 +235,7 @@ export default function WritingNew() {
               <p className="text-sm font-medium text-gray-800">Mặc định (JA)</p>
               <p className="text-xs text-gray-400">Dùng JA model từ cài đặt</p>
             </button>
-            {jaRoleBots.map((bot) => (
+            {allBots.map((bot) => (
               <button
                 key={bot.id}
                 type="button"
@@ -245,7 +247,46 @@ export default function WritingNew() {
                 }`}
               >
                 <p className="text-sm font-medium text-gray-800 truncate">{bot.name}</p>
-                <p className="text-xs text-gray-400 truncate">{bot.description}</p>
+                <p className="text-xs text-gray-400 truncate">{bot.role} — {bot.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Review Bot Picker */}
+        <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-3">
+          <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" style={{ color: "#028a39" }} />
+            Bot review bài
+            <span className="text-xs text-gray-400 font-normal ml-1">(tùy chọn — review sau khi viết xong)</span>
+          </h2>
+          <p className="text-xs text-gray-400">Bot review sẽ đọc bài viết và đưa ra nhận xét về độ chính xác pháp lý, citations, rủi ro.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, review_bot_variant_id: null })}
+              className={`p-3 rounded-lg border text-left transition-colors ${
+                form.review_bot_variant_id === null
+                  ? "border-green-600 bg-green-50"
+                  : "border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              <p className="text-sm font-medium text-gray-800">Không review</p>
+              <p className="text-xs text-gray-400">Bỏ qua bước review</p>
+            </button>
+            {bots.map((bot) => (
+              <button
+                key={bot.id}
+                type="button"
+                onClick={() => setForm({ ...form, review_bot_variant_id: bot.id })}
+                className={`p-3 rounded-lg border text-left transition-colors ${
+                  form.review_bot_variant_id === bot.id
+                    ? "border-green-600 bg-green-50"
+                    : "border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <p className="text-sm font-medium text-gray-800 truncate">{bot.name}</p>
+                <p className="text-xs text-gray-400 truncate">{bot.role} — {bot.description}</p>
               </button>
             ))}
           </div>

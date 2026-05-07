@@ -115,6 +115,7 @@ async def generate_writing_content(
     db: AsyncSession,
     skill_ids: List[int] = None,
     word_count_target: int = 2000,
+    regulation_ids: List[int] = None,
 ) -> str:
     """
     Generate full writing content with citation-first prompting.
@@ -130,6 +131,29 @@ async def generate_writing_content(
     priority_context = await get_priority_docs_context(db, topic)
     skills_context = await get_skills_context(db, skill_ids or [])
 
+    # Load regulation context if provided
+    regulation_context = ""
+    if regulation_ids:
+        try:
+            placeholders = ", ".join([f":r{i}" for i in range(len(regulation_ids))])
+            reg_params = {f"r{i}": rid for i, rid in enumerate(regulation_ids)}
+            reg_result = await db.execute(
+                text(f"""
+                    SELECT title, doc_number, content_text
+                    FROM taxlegal.law_documents_v2
+                    WHERE id IN ({placeholders}) AND is_active = TRUE
+                """),
+                reg_params
+            )
+            reg_rows = reg_result.fetchall()
+            if reg_rows:
+                parts = ["## QUY ĐỊNH ÁP DỤNG (ĐỌC TRƯỚC KHI VIẾT)\n"]
+                for r in reg_rows:
+                    parts.append(f"### {r.title} ({r.doc_number or ''})\n{(r.content_text or '')[:4000]}\n")
+                regulation_context = "\n".join(parts)
+        except Exception as e:
+            logger.warning(f"Failed to load regulations: {e}")
+
     content_desc = CONTENT_TYPES.get(content_type, CONTENT_TYPES["analysis"])[lang]
 
     if lang == "vi":
@@ -144,6 +168,8 @@ async def generate_writing_content(
 {priority_context}
 
 {skills_context}
+
+{regulation_context}
 
 ## YÊU CẦU
 - Độ dài mục tiêu: khoảng {word_count_target} từ
@@ -164,6 +190,8 @@ async def generate_writing_content(
 {priority_context}
 
 {skills_context}
+
+{regulation_context}
 
 ## REQUIREMENTS
 - Target length: approximately {word_count_target} words

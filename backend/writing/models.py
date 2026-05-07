@@ -26,6 +26,9 @@ class WritingJob(Base):
     final_content = Column(Text)
     docx_path = Column(String(500))
     gamma_url = Column(String(500))
+    review_bot_variant_id = Column(Integer)
+    review_content = Column(Text)
+    review_status = Column(String(50), default="none")  # none|pending|reviewing|done|error
     created_by = Column(Integer, ForeignKey("taxlegal.users.id"))
     created_at = Column(TIMESTAMPTZ, server_default=func.now())
     updated_at = Column(TIMESTAMPTZ, server_default=func.now(), onupdate=func.now())
@@ -74,5 +77,7 @@ class SampleWriting(Base):
     content = Column(Text, nullable=False)
     tags = Column(ARRAY(String), default=[])
     is_active = Column(Boolean, default=True)
+    category = Column(String(100))
+    topic = Column(String(300))
     created_by = Column(Integer, ForeignKey("taxlegal.users.id"))
     created_at = Column(TIMESTAMPTZ, server_default=func.now())

@@ -57,7 +57,7 @@ export default function WritingDetail() {
   const [exporting, setExporting] = useState(false);
   const [creatingSlides, setCreatingSlides] = useState(false);
   const [streamContent, setStreamContent] = useState("");
-  const [activeTab, setActiveTab] = useState<"preview" | "raw">("preview");
+  const [activeTab, setActiveTab] = useState<"preview" | "raw" | "review">("preview");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const jobId = parseInt(id || "0");
@@ -290,17 +290,26 @@ export default function WritingDetail() {
         <div className="bg-white rounded-xl border border-gray-100">
           {/* Tab bar */}
           <div className="flex items-center border-b border-gray-100 px-4">
-            {["preview", "raw"].map((tab) => (
+            {["preview", "raw", "review"].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
                 className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab
-                    ? "border-green-600 text-green-700"
+                    ? tab === "review"
+                      ? (job?.review_content ? "border-purple-600 text-purple-700" : "border-gray-400 text-gray-500")
+                      : "border-green-600 text-green-700"
                     : "border-transparent text-gray-500 hover:text-gray-700"
                 }`}
               >
-                {tab === "preview" ? "Preview" : "Markdown"}
+                {tab === "preview" ? "Preview" : tab === "raw" ? "Markdown" : (
+                  <span className="flex items-center gap-1">
+                    Review
+                    {job?.review_content && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-500 inline-block" />
+                    )}
+                  </span>
+                )}
               </button>
             ))}
             {displayContent && (
@@ -317,11 +326,32 @@ export default function WritingDetail() {
               </div>
             ) : activeTab === "preview" ? (
               <MarkdownPreview content={displayContent} />
-            ) : (
+            ) : activeTab === "raw" ? (
               <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono overflow-auto max-h-[600px]">
                 {displayContent}
               </pre>
-            )}
+            ) : activeTab === "review" ? (
+              job?.review_content ? (
+                <div className="space-y-2">
+                  <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                    job.review_status === "done" ? "bg-green-50 text-green-700" :
+                    job.review_status === "reviewing" ? "bg-blue-50 text-blue-700" :
+                    "bg-gray-100 text-gray-600"
+                  }`}>
+                    {job.review_status === "done" ? "✓ Review hoàn thành" :
+                     job.review_status === "reviewing" ? "⟳ Đang review..." : "◎ " + (job.review_status || "none")}
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                    {job.review_content}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  <p className="font-medium">Chưa có review</p>
+                  <p className="text-sm mt-1">Chọn Bot review khi tạo bài hoặc tạo bài mới với bot review</p>
+                </div>
+              )
+            ) : null}
           </div>
         </div>
       ) : (

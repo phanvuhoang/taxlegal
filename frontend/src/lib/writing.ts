@@ -17,6 +17,8 @@ export interface WritingJob {
   final_content: string | null;
   docx_path: string | null;
   gamma_url: string | null;
+  review_content: string | null;
+  review_status: string | null;
   created_at: string | null;
 }
 
@@ -55,6 +57,7 @@ export const writingApi = {
     bot_variant_id?: number | null;
     skill_ids?: number[];
     word_count_target?: number;
+    review_bot_variant_id?: number | null;
   }) => api.post("/api/writing", data),
   generate: (id: number) => api.post(`/api/writing/${id}/generate`),
   createSlides: (id: number) => api.post(`/api/writing/${id}/create-slides`),

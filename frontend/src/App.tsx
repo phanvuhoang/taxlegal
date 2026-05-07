@@ -18,12 +18,17 @@ import AdminCrawler from "./pages/AdminCrawler";
 import AdminSkills from "./pages/AdminSkills";
 import AdminBotVariants from "./pages/AdminBotVariants";
 import AdminPipelineTemplates from "./pages/AdminPipelineTemplates";
-// Module 3 — Writing
+// Module 2 — Writing
 import Writing from "./pages/Writing";
 import WritingNew from "./pages/WritingNew";
 import WritingDetail from "./pages/WritingDetail";
 import AdminPriorityDocs from "./pages/AdminPriorityDocs";
 import AdminSampleWritings from "./pages/AdminSampleWritings";
+import DocAnalysis from "./pages/DocAnalysis";
+import DocAnalysisNew from "./pages/DocAnalysisNew";
+import DocAnalysisDetail from "./pages/DocAnalysisDetail";
+import AdminLawDocuments from "./pages/AdminLawDocuments";
+import SampleWritingsPublic from "./pages/SampleWritingsPublic";
 import { getUser } from "./lib/auth";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -60,10 +65,15 @@ export default function App() {
         <Route path="/legal-search" element={<RequireAuth><LegalSearch /></RequireAuth>} />
         <Route path="/legal-chat" element={<RequireAuth><LegalChat /></RequireAuth>} />
         <Route path="/legal-documents" element={<RequireAuth><LegalDocuments /></RequireAuth>} />
-        {/* Module 3 — Writing */}
+        {/* Module 2 — Writing */}
         <Route path="/writing" element={<RequireAuth><Writing /></RequireAuth>} />
         <Route path="/writing/new" element={<RequireAuth><WritingNew /></RequireAuth>} />
         <Route path="/writing/:id" element={<RequireAuth><WritingDetail /></RequireAuth>} />
+        <Route path="/sample-writings" element={<RequireAuth><SampleWritingsPublic /></RequireAuth>} />
+        {/* Module 3 — Tra cứu & Phân tích */}
+        <Route path="/doc-analysis" element={<RequireAuth><DocAnalysis /></RequireAuth>} />
+        <Route path="/doc-analysis/new" element={<RequireAuth><DocAnalysisNew /></RequireAuth>} />
+        <Route path="/doc-analysis/:id" element={<RequireAuth><DocAnalysisDetail /></RequireAuth>} />
         {/* Admin */}
         <Route path="/admin" element={<RequireAdmin><Admin /></RequireAdmin>} />
         <Route path="/admin/users" element={<RequireAdmin><AdminUsers /></RequireAdmin>} />
@@ -74,6 +84,7 @@ export default function App() {
         <Route path="/admin/pipeline-templates" element={<RequireAdmin><AdminPipelineTemplates /></RequireAdmin>} />
         <Route path="/admin/priority-docs" element={<RequireAdmin><AdminPriorityDocs /></RequireAdmin>} />
         <Route path="/admin/sample-writings" element={<RequireAdmin><AdminSampleWritings /></RequireAdmin>} />
+        <Route path="/admin/law-documents" element={<RequireAdmin><AdminLawDocuments /></RequireAdmin>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

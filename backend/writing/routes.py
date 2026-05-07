@@ -48,6 +48,7 @@ class WritingJobCreate(BaseModel):
     bot_variant_id: Optional[int] = None
     skill_ids: Optional[List[int]] = []
     word_count_target: int = 2000
+    review_bot_variant_id: Optional[int] = None
 
 
 class WritingJobOut(BaseModel):
@@ -148,10 +149,10 @@ async def create_writing_job(
         text("""
             INSERT INTO taxlegal.writing_jobs
                 (title, content_type, topic, context, output_language, bot_variant_id,
-                 skill_ids, status, word_count_target, created_by)
+                 skill_ids, status, word_count_target, review_bot_variant_id, created_by)
             VALUES
                 (:title, :content_type, :topic, :context, :output_language, :bot_variant_id,
-                 :skill_ids, 'draft', :word_count_target, :created_by)
+                 :skill_ids, 'draft', :word_count_target, :review_bot_variant_id, :created_by)
             RETURNING id, title, content_type, topic, context, output_language,
                       bot_variant_id, skill_ids, status, word_count_target, created_at
         """),
@@ -164,6 +165,7 @@ async def create_writing_job(
             "bot_variant_id": req.bot_variant_id,
             "skill_ids": req.skill_ids or [],
             "word_count_target": req.word_count_target,
+            "review_bot_variant_id": req.review_bot_variant_id,
             "created_by": current_user.id,
         }
     )
@@ -189,7 +191,9 @@ async def get_writing_job(
         text("""
             SELECT id, title, content_type, topic, context, output_language,
                    bot_variant_id, skill_ids, status, word_count_target,
-                   final_content, docx_path, gamma_url, created_at
+                   final_content, docx_path, gamma_url,
+                   review_bot_variant_id, review_content, review_status,
+                   created_at
             FROM taxlegal.writing_jobs
             WHERE id = :job_id AND created_by = :user_id
         """),
@@ -205,6 +209,9 @@ async def get_writing_job(
         "status": row.status, "word_count_target": row.word_count_target,
         "final_content": row.final_content, "docx_path": row.docx_path,
         "gamma_url": row.gamma_url,
+        "review_bot_variant_id": row.review_bot_variant_id,
+        "review_content": row.review_content,
+        "review_status": row.review_status,
         "created_at": row.created_at.isoformat() if row.created_at else None,
     }
 
@@ -255,6 +262,85 @@ async def generate_writing(
             {"content": content, "id": job_id}
         )
         await db.commit()
+
+        # Trigger review if review bot is configured
+        if job.review_bot_variant_id:
+            try:
+                await db.execute(
+                    text("UPDATE taxlegal.writing_jobs SET review_status='reviewing' WHERE id=:id"),
+                    {"id": job_id}
+                )
+                await db.commit()
+
+                # Get review bot's system prompt / skills
+                rev_bot_result = await db.execute(
+                    text("SELECT name, system_prompt_base FROM taxlegal.bot_variants WHERE id=:id"),
+                    {"id": job.review_bot_variant_id}
+                )
+                rev_bot = rev_bot_result.fetchone()
+
+                lang = job.output_language or "vi"
+                if lang == "vi":
+                    review_prompt = f"""Bạn là reviewer chuyên nghiệp. Hãy review bài viết sau và đưa ra nhận xét chi tiết:
+
+## BÀI VIẾT CẦN REVIEW
+{content[:12000]}
+
+## YÊU CẦU REVIEW
+1. Đánh giá tổng thể: độ chính xác pháp lý, tính đầy đủ, cấu trúc
+2. Kiểm tra citations: mỗi nhận định có trích dẫn luật không?
+3. Rủi ro và điểm cần bổ sung
+4. Điểm mạnh của bài viết
+5. Kết luận: Chấp nhận / Cần chỉnh sửa / Từ chối
+
+Viết bằng TIẾNG VIỆT."""
+                else:
+                    review_prompt = f"""You are a professional reviewer. Review the following article:
+
+## ARTICLE TO REVIEW
+{content[:12000]}
+
+## REVIEW CRITERIA
+1. Overall assessment: legal accuracy, completeness, structure
+2. Citation check: does every finding cite specific legal provisions?
+3. Risks and gaps
+4. Strengths
+5. Conclusion: Accept / Needs revision / Reject
+
+Write in ENGLISH."""
+
+                review_sys = (rev_bot.system_prompt_base if rev_bot and rev_bot.system_prompt_base
+                             else "You are an expert tax law reviewer with 30 years experience." if lang == "en"
+                             else "Bạn là chuyên gia review văn bản thuế với 30 năm kinh nghiệm.")
+
+                from backend.ai_provider import call_ai
+                from backend.config import DEEPSEEK_MODEL
+
+                review_result = await call_ai(
+                    model_id=DEEPSEEK_MODEL or "deepseek-chat",
+                    messages=[{"role": "user", "content": review_prompt}],
+                    system_prompt=review_sys,
+                    max_tokens=4000,
+                    temperature=0.3,
+                )
+                review_text = review_result.get("content", "") if isinstance(review_result, dict) else str(review_result)
+
+                await db.execute(
+                    text("""
+                        UPDATE taxlegal.writing_jobs
+                        SET review_content=:rc, review_status='done'
+                        WHERE id=:id
+                    """),
+                    {"rc": review_text, "id": job_id}
+                )
+                await db.commit()
+            except Exception as review_err:
+                logger.warning(f"Review failed (non-fatal): {review_err}")
+                await db.execute(
+                    text("UPDATE taxlegal.writing_jobs SET review_status='error' WHERE id=:id"),
+                    {"id": job_id}
+                )
+                await db.commit()
 
         return {"status": "done", "content": content, "job_id": job_id}
 
@@ -477,6 +563,36 @@ async def delete_priority_doc(
 ):
     await db.execute(text("DELETE FROM taxlegal.priority_docs WHERE id = :id"), {"id": doc_id})
     await db.commit()
+
+
+# ── Public: Sample Writings (for users) ────────────────────────────────────────
+
+@router.get("/api/sample-writings")
+async def list_sample_writings_public(
+    db: AsyncSession = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    """Public list of sample writings for all authenticated users."""
+    result = await db.execute(
+        text("""
+            SELECT id, title, content_type, language, content, tags, is_active,
+                   category, topic, created_at
+            FROM taxlegal.sample_writings
+            WHERE is_active = TRUE
+            ORDER BY created_at DESC
+        """)
+    )
+    rows = result.fetchall()
+    return [
+        {
+            "id": r.id, "title": r.title, "content_type": r.content_type,
+            "language": r.language, "content": r.content, "tags": r.tags,
+            "category": r.category, "topic": r.topic,
+            "is_active": r.is_active,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
 
 
 # ── Admin: Sample Writings ────────────────────────────────────────────────────
