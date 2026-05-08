@@ -14,6 +14,11 @@ from backend.routes.matters import router as matters_router
 from backend.routes.admin import router as admin_router
 from backend.routes.laws import router as laws_router
 from backend.routes.skills import router as skills_router
+from backend.routes.cases import router as cases_router
+from backend.routes.workflows_v4 import router as workflows_v4_router
+from backend.routes.bots_v4 import router as bots_v4_router
+from backend.routes.skills_v4 import router as skills_v4_router
+from backend.routes.health import router as health_router
 from backend.config import APP_PORT
 
 # Legal Agent module
@@ -48,7 +53,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="TaxLegal AI",
     description="AI-powered Tax & Legal Advisory Platform",
-    version="1.0.0",
+    version="4.0.0",
     lifespan=lifespan,
 )
 
@@ -66,6 +71,11 @@ app.include_router(matters_router)
 app.include_router(admin_router)
 app.include_router(laws_router)
 app.include_router(skills_router)
+app.include_router(cases_router)
+app.include_router(workflows_v4_router)
+app.include_router(bots_v4_router)
+app.include_router(skills_v4_router)
+app.include_router(health_router)
 
 # Legal Agent module routes
 app.include_router(legalai_search.router)
@@ -84,7 +94,7 @@ app.include_router(regulations_router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "app": "TaxLegal AI", "version": "1.0.0"}
+    return {"status": "ok", "app": "TaxLegal AI", "version": "4.0.0"}
 
 
 @app.get("/api/models")

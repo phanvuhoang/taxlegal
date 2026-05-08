@@ -419,3 +419,287 @@ ALTER TABLE taxlegal.sample_writings ADD COLUMN IF NOT EXISTS topic VARCHAR(300)
 -- ============================================================
 ALTER TABLE taxlegal.sample_advices ADD COLUMN IF NOT EXISTS category VARCHAR(100);
 ALTER TABLE taxlegal.sample_advices ADD COLUMN IF NOT EXISTS topic VARCHAR(300);
+
+
+-- ============================================================
+-- v4 Architecture — new tables (safe: IF NOT EXISTS)
+-- ============================================================
+
+-- Skill versioning
+ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS version_number INTEGER DEFAULT 1;
+ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS parent_skill_id INTEGER REFERENCES taxlegal.skills(id);
+
+-- Bot node_type for workflow
+ALTER TABLE taxlegal.bot_variants ADD COLUMN IF NOT EXISTS node_type VARCHAR(50) DEFAULT 'agent';
+
+-- Workflow definitions
+CREATE TABLE IF NOT EXISTS taxlegal.workflow_definitions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(200) NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+    version INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_default BOOLEAN DEFAULT FALSE,
+    practice_area VARCHAR(50) DEFAULT 'tax',
+    graph_definition JSONB DEFAULT '{}',
+    entry_node VARCHAR(100),
+    metadata JSONB DEFAULT '{}',
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_workflow_definitions_slug ON taxlegal.workflow_definitions(slug);
+
+-- Cases
+CREATE TABLE IF NOT EXISTS taxlegal.cases (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    matter_id INTEGER REFERENCES taxlegal.matters(id),
+    title VARCHAR(500) NOT NULL,
+    client_request TEXT NOT NULL,
+    practice_area VARCHAR(100) DEFAULT 'tax',
+    status VARCHAR(50) DEFAULT 'draft',
+    workflow_definition_id UUID REFERENCES taxlegal.workflow_definitions(id),
+    current_node VARCHAR(100),
+    output_language VARCHAR(2) DEFAULT 'vi',
+    priority VARCHAR(20) DEFAULT 'normal',
+    metadata JSONB DEFAULT '{}',
+    final_output TEXT,
+    quality_score FLOAT,
+    created_by INTEGER NOT NULL REFERENCES taxlegal.users(id),
+    assigned_to INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_cases_status ON taxlegal.cases(status);
+CREATE INDEX IF NOT EXISTS ix_cases_created_by ON taxlegal.cases(created_by);
+
+-- Case events (audit trail)
+CREATE TABLE IF NOT EXISTS taxlegal.case_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id) ON DELETE CASCADE,
+    event_type VARCHAR(100) NOT NULL,
+    node_name VARCHAR(100),
+    actor VARCHAR(100),
+    data JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_case_events_case_id ON taxlegal.case_events(case_id);
+
+-- Case versions (immutable snapshots)
+CREATE TABLE IF NOT EXISTS taxlegal.case_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    snapshot JSONB NOT NULL,
+    change_summary TEXT,
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_case_versions_case_id ON taxlegal.case_versions(case_id);
+
+-- Workflow nodes
+CREATE TABLE IF NOT EXISTS taxlegal.workflow_nodes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id UUID NOT NULL REFERENCES taxlegal.workflow_definitions(id) ON DELETE CASCADE,
+    node_id VARCHAR(100) NOT NULL,
+    node_type VARCHAR(50) DEFAULT 'agent',
+    label VARCHAR(200),
+    bot_definition_id INTEGER REFERENCES taxlegal.bot_variants(id),
+    skill_ids JSONB DEFAULT '[]',
+    config JSONB DEFAULT '{}',
+    position_x FLOAT,
+    position_y FLOAT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(workflow_id, node_id)
+);
+CREATE INDEX IF NOT EXISTS ix_workflow_nodes_workflow_id ON taxlegal.workflow_nodes(workflow_id);
+
+-- Workflow edges
+CREATE TABLE IF NOT EXISTS taxlegal.workflow_edges (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id UUID NOT NULL REFERENCES taxlegal.workflow_definitions(id) ON DELETE CASCADE,
+    from_node VARCHAR(100) NOT NULL,
+    to_node VARCHAR(100) NOT NULL,
+    condition VARCHAR(200),
+    label VARCHAR(200),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_workflow_edges_workflow_id ON taxlegal.workflow_edges(workflow_id);
+
+-- Workflow runs
+CREATE TABLE IF NOT EXISTS taxlegal.workflow_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id),
+    workflow_definition_id UUID REFERENCES taxlegal.workflow_definitions(id),
+    workflow_version INTEGER DEFAULT 1,
+    status VARCHAR(50) DEFAULT 'pending',
+    current_node VARCHAR(100),
+    state JSONB DEFAULT '{}',
+    temporal_workflow_id VARCHAR(200),
+    temporal_run_id VARCHAR(200),
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_workflow_runs_case_id ON taxlegal.workflow_runs(case_id);
+CREATE INDEX IF NOT EXISTS ix_workflow_runs_status ON taxlegal.workflow_runs(status);
+
+-- Agent runs
+CREATE TABLE IF NOT EXISTS taxlegal.agent_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_run_id UUID REFERENCES taxlegal.workflow_runs(id),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id),
+    node_name VARCHAR(100) NOT NULL,
+    bot_variant_slug VARCHAR(100),
+    model_used VARCHAR(200),
+    provider_used VARCHAR(50),
+    status VARCHAR(50) DEFAULT 'pending',
+    input_state JSONB DEFAULT '{}',
+    output_state JSONB DEFAULT '{}',
+    prompt_tokens INTEGER DEFAULT 0,
+    completion_tokens INTEGER DEFAULT 0,
+    retrieval_queries JSONB DEFAULT '[]',
+    citations_used JSONB DEFAULT '[]',
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    duration_ms INTEGER,
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_agent_runs_case_id ON taxlegal.agent_runs(case_id);
+CREATE INDEX IF NOT EXISTS ix_agent_runs_workflow_run_id ON taxlegal.agent_runs(workflow_run_id);
+
+-- Skill versions
+CREATE TABLE IF NOT EXISTS taxlegal.skill_versions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    skill_id INTEGER NOT NULL REFERENCES taxlegal.skills(id) ON DELETE CASCADE,
+    version_number INTEGER NOT NULL,
+    content_markdown TEXT NOT NULL,
+    change_notes TEXT,
+    created_by INTEGER REFERENCES taxlegal.users(id),
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(skill_id, version_number)
+);
+
+-- Bot skill assignments
+CREATE TABLE IF NOT EXISTS taxlegal.bot_skill_assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    bot_variant_id INTEGER NOT NULL REFERENCES taxlegal.bot_variants(id) ON DELETE CASCADE,
+    skill_id INTEGER NOT NULL REFERENCES taxlegal.skills(id) ON DELETE CASCADE,
+    skill_version INTEGER,
+    is_active BOOLEAN DEFAULT TRUE,
+    assigned_at TIMESTAMP DEFAULT NOW(),
+    assigned_by INTEGER REFERENCES taxlegal.users(id),
+    UNIQUE(bot_variant_id, skill_id)
+);
+
+-- Draft opinions
+CREATE TABLE IF NOT EXISTS taxlegal.draft_opinions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id),
+    agent_run_id UUID REFERENCES taxlegal.agent_runs(id),
+    version_number INTEGER DEFAULT 1,
+    content_markdown TEXT NOT NULL,
+    content_html TEXT,
+    word_count INTEGER,
+    citations JSONB DEFAULT '[]',
+    assumptions JSONB DEFAULT '[]',
+    open_questions JSONB DEFAULT '[]',
+    source_coverage_score FLOAT,
+    has_insufficient_coverage BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_draft_opinions_case_id ON taxlegal.draft_opinions(case_id);
+
+-- Review decisions
+CREATE TABLE IF NOT EXISTS taxlegal.review_decisions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id),
+    agent_run_id UUID REFERENCES taxlegal.agent_runs(id),
+    reviewer_role VARCHAR(50) NOT NULL,
+    reviewer_id INTEGER REFERENCES taxlegal.users(id),
+    decision VARCHAR(50) NOT NULL,
+    technical_score FLOAT,
+    risk_score FLOAT,
+    issues_found JSONB DEFAULT '[]',
+    corrections_required JSONB DEFAULT '[]',
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_review_decisions_case_id ON taxlegal.review_decisions(case_id);
+
+-- Human approvals
+CREATE TABLE IF NOT EXISTS taxlegal.human_approvals (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id),
+    workflow_run_id UUID REFERENCES taxlegal.workflow_runs(id),
+    requested_by VARCHAR(100),
+    reason TEXT,
+    status VARCHAR(50) DEFAULT 'pending',
+    approved_by INTEGER REFERENCES taxlegal.users(id),
+    decision_notes TEXT,
+    requested_at TIMESTAMP DEFAULT NOW(),
+    decided_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS ix_human_approvals_case_id ON taxlegal.human_approvals(case_id);
+
+-- Citations
+CREATE TABLE IF NOT EXISTS taxlegal.citations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID NOT NULL REFERENCES taxlegal.cases(id),
+    agent_run_id UUID REFERENCES taxlegal.agent_runs(id),
+    source_type VARCHAR(50) NOT NULL,
+    trust_level VARCHAR(20) DEFAULT 'high',
+    law_identifier VARCHAR(300),
+    article_reference VARCHAR(300),
+    excerpt_text TEXT,
+    source_url TEXT,
+    retrieval_method VARCHAR(100),
+    relevance_score FLOAT,
+    is_verified BOOLEAN DEFAULT FALSE,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_citations_case_id ON taxlegal.citations(case_id);
+
+-- Retrieval queries (audit log)
+CREATE TABLE IF NOT EXISTS taxlegal.retrieval_queries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    case_id UUID REFERENCES taxlegal.cases(id),
+    agent_run_id UUID REFERENCES taxlegal.agent_runs(id),
+    query_text TEXT NOT NULL,
+    query_type VARCHAR(50) DEFAULT 'general',
+    db_results_count INTEGER DEFAULT 0,
+    used_fallback BOOLEAN DEFAULT FALSE,
+    fallback_reason TEXT,
+    insufficient_coverage BOOLEAN DEFAULT FALSE,
+    results_summary JSONB DEFAULT '{}',
+    duration_ms INTEGER,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Approval policies
+CREATE TABLE IF NOT EXISTS taxlegal.approval_policies (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(200) NOT NULL,
+    workflow_definition_id UUID REFERENCES taxlegal.workflow_definitions(id),
+    trigger_conditions JSONB NOT NULL DEFAULT '{}',
+    required_approvers JSONB DEFAULT '[]',
+    timeout_hours INTEGER DEFAULT 48,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Task states (Redis-less durability fallback)
+CREATE TABLE IF NOT EXISTS taxlegal.task_states (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_run_id UUID REFERENCES taxlegal.workflow_runs(id),
+    task_key VARCHAR(200) NOT NULL UNIQUE,
+    state_data JSONB DEFAULT '{}',
+    expires_at TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT NOW()
+);

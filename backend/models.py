@@ -332,6 +332,8 @@ class Skill(Base):
     frontmatter = Column(JSONB, default=dict)         # parsed YAML frontmatter as JSON
     is_active = Column(Boolean, default=True)
     is_builtin = Column(Boolean, default=False)       # True = seeded from repo /skills/ folder
+    version_number = Column(Integer, default=1)        # v4: integer version counter
+    parent_skill_id = Column(Integer, ForeignKey("taxlegal.skills.id"), nullable=True)  # v4: version chain
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     created_by = Column(Integer, ForeignKey("taxlegal.users.id"), nullable=True)
@@ -354,6 +356,7 @@ class BotVariant(Base):
     provider_override = Column(String(50))               # if set, override provider
     is_active = Column(Boolean, default=True)
     is_builtin = Column(Boolean, default=False)          # True = seeded defaults
+    node_type = Column(String(50), default="agent")      # v4: workflow node type (agent/human_gate/condition/start/end)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

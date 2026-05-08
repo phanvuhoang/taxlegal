@@ -611,4 +611,33 @@ async def seed_skills_and_bots():
         await db.commit()
         logger.info("Skill–BotVariant links updated.")
 
+    # ── 5. Seed default workflow definition ──────────────────────────────────
+    async with AsyncSessionLocal() as db:
+        try:
+            await db.execute(text("""
+                INSERT INTO taxlegal.workflow_definitions
+                    (id, name, slug, description, version, is_active, is_default, practice_area, entry_node, graph_definition)
+                VALUES
+                    (gen_random_uuid(), 'Tax Advisory Standard', 'tax-advisory-standard',
+                     'Standard 7-step tax advisory pipeline', 1, TRUE, TRUE, 'tax', 'intake',
+                     '{"nodes": ["intake","research","draft","sa_review","partner_review","human_gate","delivery","audit"],
+                       "edges": [
+                         {"from": "intake", "to": "research", "condition": "default"},
+                         {"from": "research", "to": "draft"},
+                         {"from": "draft", "to": "sa_review"},
+                         {"from": "sa_review", "to": "partner_review", "condition": "approved"},
+                         {"from": "sa_review", "to": "research", "condition": "revision_required"},
+                         {"from": "partner_review", "to": "delivery", "condition": "approved"},
+                         {"from": "partner_review", "to": "human_gate", "condition": "human_approval_required"},
+                         {"from": "human_gate", "to": "delivery", "condition": "approved"},
+                         {"from": "delivery", "to": "audit"}
+                       ]
+                     }'::jsonb)
+                ON CONFLICT (slug) DO NOTHING
+            """))
+            await db.commit()
+            logger.info("Default workflow definition seeded.")
+        except Exception as e:
+            logger.warning(f"Could not seed default workflow definition (table may not exist yet): {e}")
+
     logger.info("seed_skills_and_bots() complete.")

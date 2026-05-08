@@ -5,12 +5,14 @@ import {
   LogOut, Shield, FlaskConical, Scale, Search,
   MessageSquare, Globe, Target, Bot,
   ClipboardList, PenTool, BookMarked, Library,
-  FileSearch, ChevronDown, ChevronRight, Gavel
+  FileSearch, ChevronDown, ChevronRight, Gavel,
+  Briefcase, GitBranch
 } from "lucide-react";
 import { useState } from "react";
 
 // Module sections
 const MODULE1 = [
+  { href: "/cases", icon: Briefcase, label: "Cases" },
   { href: "/matters", icon: FileText, label: "Vấn đề" },
   { href: "/sample-advices", icon: BookOpen, label: "Bài tư vấn mẫu" },
 ];
@@ -37,6 +39,7 @@ const ADMIN_ITEMS = [
   { href: "/admin/pipeline-templates", icon: ClipboardList, label: "Pipeline Templates" },
   { href: "/admin/crawler", icon: Globe, label: "Crawler" },
   { href: "/admin/autotest", icon: FlaskConical, label: "AutoTest" },
+  { href: "/admin/workflows", icon: GitBranch, label: "Workflow Editor" },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

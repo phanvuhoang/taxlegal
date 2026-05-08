@@ -29,6 +29,10 @@ import DocAnalysisNew from "./pages/DocAnalysisNew";
 import DocAnalysisDetail from "./pages/DocAnalysisDetail";
 import AdminLawDocuments from "./pages/AdminLawDocuments";
 import SampleWritingsPublic from "./pages/SampleWritingsPublic";
+import Cases from "./pages/Cases";
+import CaseNew from "./pages/CaseNew";
+import CaseDetail from "./pages/CaseDetail";
+import WorkflowEditor from "./pages/WorkflowEditor";
 import { getUser } from "./lib/auth";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -85,6 +89,11 @@ export default function App() {
         <Route path="/admin/priority-docs" element={<RequireAdmin><AdminPriorityDocs /></RequireAdmin>} />
         <Route path="/admin/sample-writings" element={<RequireAdmin><AdminSampleWritings /></RequireAdmin>} />
         <Route path="/admin/law-documents" element={<RequireAdmin><AdminLawDocuments /></RequireAdmin>} />
+        <Route path="/admin/workflows" element={<RequireAdmin><WorkflowEditor /></RequireAdmin>} />
+        {/* Module 0 — Cases */}
+        <Route path="/cases" element={<RequireAuth><Cases /></RequireAuth>} />
+        <Route path="/cases/new" element={<RequireAuth><CaseNew /></RequireAuth>} />
+        <Route path="/cases/:id" element={<RequireAuth><CaseDetail /></RequireAuth>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
