@@ -54,27 +54,43 @@ async def ensure_database_exists():
 
 
 async def run_init_sql():
-    """Run migrations/init_schema.sql to create schema and tables."""
+    """Run migrations/init_schema.sql to create schema and tables.
+    Each statement runs in its own transaction so one failure
+    does not abort the rest (safe for idempotent CREATE IF NOT EXISTS).
+    """
     sql_path = Path(__file__).parent / "migrations" / "init_schema.sql"
     sql = sql_path.read_text()
-    async with engine.begin() as conn:
-        # Execute statement by statement (split on semicolons, ignore empty)
-        statements = [s.strip() for s in sql.split(";") if s.strip()]
-        for stmt in statements:
-            try:
+    statements = [s.strip() for s in sql.split(";") if s.strip()]
+    ok = 0
+    skipped = 0
+    for stmt in statements:
+        try:
+            async with engine.begin() as conn:   # each stmt = own transaction
                 await conn.execute(text(stmt))
-            except Exception as e:
-                logger.warning(f"SQL stmt warning (may be OK if already exists): {e}")
+            ok += 1
+        except Exception as e:
+            skipped += 1
+            logger.warning(f"SQL stmt skipped (likely already exists): {str(e)[:120]}")
+    logger.info(f"Schema init: {ok} OK, {skipped} skipped.")
     logger.info("Schema initialization complete.")
 
     # Explicit column migrations — ensure v4 columns exist on existing DBs
+    # These run on every startup (ADD COLUMN IF NOT EXISTS = idempotent)
     _col_migrations = [
+        # taxlegal.skills — v4 columns
         "ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS version_number INTEGER DEFAULT 1",
         "ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS parent_skill_id INTEGER REFERENCES taxlegal.skills(id)",
         "ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES taxlegal.users(id)",
+        # taxlegal.bot_variants — v4 columns
         "ALTER TABLE taxlegal.bot_variants ADD COLUMN IF NOT EXISTS model_override VARCHAR(100)",
         "ALTER TABLE taxlegal.bot_variants ADD COLUMN IF NOT EXISTS provider_override VARCHAR(50)",
+        "ALTER TABLE taxlegal.bot_variants ADD COLUMN IF NOT EXISTS node_type VARCHAR(50) DEFAULT 'agent'",
+        # taxlegal.pipeline_templates — v4 columns
         "ALTER TABLE taxlegal.pipeline_templates ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE",
+        # taxlegal.matters — v4 columns
+        "ALTER TABLE taxlegal.matters ADD COLUMN IF NOT EXISTS output_language VARCHAR(10) DEFAULT 'vi'",
+        "ALTER TABLE taxlegal.matters ADD COLUMN IF NOT EXISTS pipeline_template_id INTEGER",
+        "ALTER TABLE taxlegal.matters ADD COLUMN IF NOT EXISTS assigned_bot_variant_id INTEGER",
     ]
     async with engine.begin() as conn:
         for migration in _col_migrations:
