@@ -820,12 +820,19 @@ async def seed_skills_and_bots():
 
         # ── 2. Seed BotVariants ────────────────────────────────────────────────
         for bv in DEFAULT_BOT_VARIANTS:
-            await db.execute(text("""
+            # asyncpg cannot bind a JSON string as INTEGER[] via parameter.
+            # Embed the array literal directly in SQL to avoid type ambiguity.
+            skill_ids_list = bv.get("skill_ids", []) or []
+            if skill_ids_list:
+                _arr = "ARRAY[" + ",".join(str(i) for i in skill_ids_list) + "]::INTEGER[]"
+            else:
+                _arr = "ARRAY[]::INTEGER[]"
+            await db.execute(text(f"""
                 INSERT INTO taxlegal.bot_variants
                     (name, slug, role, description, system_prompt_base, skill_ids,
                      is_builtin, is_active)
                 VALUES
-                    (:name, :slug, :role, :description, :system_prompt_base, CAST(:skill_ids AS INTEGER[]),
+                    (:name, :slug, :role, :description, :system_prompt_base, {_arr},
                      :is_builtin, :is_active)
                 ON CONFLICT (slug) DO UPDATE SET
                     name = EXCLUDED.name,
@@ -839,7 +846,6 @@ async def seed_skills_and_bots():
                 "role": bv["role"],
                 "description": bv["description"],
                 "system_prompt_base": bv.get("system_prompt_base"),
-                "skill_ids": json.dumps(bv.get("skill_ids", [])),
                 "is_builtin": bv.get("is_builtin", False),
                 "is_active": bv.get("is_active", True),
             })
@@ -886,11 +892,14 @@ async def seed_skills_and_bots():
             )
             skill_ids = [row[0] for row in result.fetchall()]
             if skill_ids:
-                await db.execute(text("""
+                # asyncpg cannot bind Python list as INTEGER[] parameter.
+                # Embed the array literal directly in SQL.
+                _arr = "ARRAY[" + ",".join(str(i) for i in skill_ids) + "]::INTEGER[]"
+                await db.execute(text(f"""
                     UPDATE taxlegal.bot_variants
-                    SET skill_ids = :skill_ids, updated_at = NOW()
+                    SET skill_ids = {_arr}, updated_at = NOW()
                     WHERE slug = :slug
-                """), {"skill_ids": skill_ids, "slug": bot_slug})
+                """), {"slug": bot_slug})
                 logger.info(f"Linked skills {skill_ids} to bot variant '{bot_slug}'")
 
         await db.commit()
