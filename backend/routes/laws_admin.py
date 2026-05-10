@@ -2,6 +2,10 @@
 Law Documents admin routes — Văn bản Luật management.
 /api/admin/law-documents/*
 /api/admin/dbvntax/*
+
+DB-FIRST POLICY: All admin endpoints write to and read from taxlegal.law_documents_v2
+(internal DB). Documents are imported from dbvntax or uploads — never from web search.
+Confirmed compliant: no web_search() calls in this module.
 """
 import logging
 import os

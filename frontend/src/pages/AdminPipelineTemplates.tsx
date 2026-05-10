@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { pipelineTemplatesApi, botVariantsApi } from "../lib/api";
-import { Plus, X, Edit2, Trash2, Star, LayoutTemplate } from "lucide-react";
+import { pipelineTemplatesApi, botVariantsApi, workflowsAdminApi } from "../lib/api";
+import { Plus, X, Edit2, Trash2, Star, LayoutTemplate, CheckCircle, XCircle, AlertTriangle } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface PipelineTemplate {
@@ -89,6 +89,14 @@ export default function AdminPipelineTemplates() {
   const [createForm, setCreateForm] = useState<any>({ ...EMPTY_FORM, step_config: defaultStepConfig() });
   const [creating, setCreating] = useState(false);
 
+  // JSON mode state for step_config editor
+  const [jsonMode, setJsonMode] = useState(false);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+
+  // Validate graph state
+  const [validating, setValidating] = useState(false);
+  const [validateResult, setValidateResult] = useState<{ is_valid: boolean; errors: string[]; warnings: string[] } | null>(null);
+
   const fetchData = () => {
     setLoading(true);
     Promise.all([pipelineTemplatesApi.list(), botVariantsApi.list()])
@@ -122,6 +130,10 @@ export default function AdminPipelineTemplates() {
 
   const handleSave = async () => {
     if (!selectedTemplate || !editForm) return;
+    if (jsonMode && jsonError) {
+      toast.error("JSON không hợp lệ — hãy sửa trước khi lưu");
+      return;
+    }
     setSaving(true);
     try {
       await pipelineTemplatesApi.update(selectedTemplate.id, editForm);
@@ -160,6 +172,19 @@ export default function AdminPipelineTemplates() {
       toast.error(err.response?.data?.detail || "Tạo thất bại");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleValidateGraph = async (workflowId: string) => {
+    setValidating(true);
+    setValidateResult(null);
+    try {
+      const res = await workflowsAdminApi.validate(workflowId);
+      setValidateResult(res.data);
+    } catch {
+      toast.error("Không thể validate graph");
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -263,6 +288,44 @@ export default function AdminPipelineTemplates() {
     </div>
   );
 
+  const StepConfigWithJsonToggle = ({ form, setForm }: { form: any; setForm: any }) => (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs font-semibold text-gray-600">Step Config</label>
+        <button
+          type="button"
+          onClick={() => { setJsonMode(!jsonMode); setJsonError(null); }}
+          className="text-xs underline"
+          style={{ color: "#028a39" }}
+        >
+          {jsonMode ? "Form mode" : "JSON mode"}
+        </button>
+      </div>
+      {jsonMode ? (
+        <div>
+          <textarea
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono resize-y"
+            rows={15}
+            value={JSON.stringify(form.step_config, null, 2)}
+            onChange={(e) => {
+              try {
+                const parsed = JSON.parse(e.target.value);
+                setForm({ ...form, step_config: parsed });
+                setJsonError(null);
+              } catch {
+                setJsonError("Invalid JSON syntax");
+              }
+            }}
+            spellCheck={false}
+          />
+          {jsonError && <p className="text-red-500 text-xs mt-1">{jsonError}</p>}
+        </div>
+      ) : (
+        <StepConfigEditor form={form} setForm={setForm} />
+      )}
+    </div>
+  );
+
   const TemplateFormBody = ({ form, setForm }: { form: any; setForm: any }) => (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -305,8 +368,7 @@ export default function AdminPipelineTemplates() {
         </select>
       </div>
       <div>
-        <label className="block text-xs font-semibold text-gray-600 mb-2">Cấu hình 7 bước</label>
-        <StepConfigEditor form={form} setForm={setForm} />
+        <StepConfigWithJsonToggle form={form} setForm={setForm} />
       </div>
       <div>
         <label className="block text-xs font-semibold text-gray-600 mb-2">Preview Pipeline</label>
@@ -552,9 +614,51 @@ export default function AdminPipelineTemplates() {
             ) : (
               <div className="space-y-4">
                 <TemplateFormBody form={editForm} setForm={setEditForm} />
+
+                {/* Validate Graph button (if template has an associated workflow_id) */}
+                {(selectedTemplate as any)?.workflow_id && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => handleValidateGraph((selectedTemplate as any).workflow_id)}
+                      disabled={validating}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-60"
+                    >
+                      {validating
+                        ? <span className="w-3.5 h-3.5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                        : <CheckCircle className="w-3.5 h-3.5" style={{ color: "#028a39" }} />
+                      }
+                      Validate Graph
+                    </button>
+                    {validateResult && (
+                      <div className={`mt-2 rounded-lg border p-3 text-xs ${
+                        validateResult.is_valid ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"
+                      }`}>
+                        <div className="flex items-center gap-1.5 mb-1 font-semibold">
+                          {validateResult.is_valid
+                            ? <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+                            : <XCircle className="w-3.5 h-3.5 text-red-600" />
+                          }
+                          <span className={validateResult.is_valid ? "text-green-800" : "text-red-800"}>
+                            {validateResult.is_valid ? "Graph hợp lệ" : "Graph không hợp lệ"}
+                          </span>
+                        </div>
+                        {validateResult.errors.map((err, i) => (
+                          <p key={i} className="text-red-700 ml-4">{err}</p>
+                        ))}
+                        {validateResult.warnings.map((w, i) => (
+                          <p key={i} className="text-amber-700 ml-4 flex items-start gap-1">
+                            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />{w}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <button
                   onClick={handleSave}
-                  disabled={saving}
+                  disabled={saving || (jsonMode && !!jsonError)}
                   className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-white text-sm font-medium"
                   style={{ background: "#028a39" }}
                 >

@@ -115,3 +115,23 @@ export const pipelineTemplatesApi = {
   update: (id: number, data: any) => api.put(`/api/admin/pipeline-templates/${id}`, data),
   delete: (id: number) => api.delete(`/api/admin/pipeline-templates/${id}`),
 };
+
+// ── Workflows ─────────────────────────────────────────────────────────────────
+export const workflowsAdminApi = {
+  validate: (workflowId: string) => api.post(`/api/workflows/${workflowId}/validate`),
+  getNodes: (workflowId: string) => api.get(`/api/workflows/${workflowId}/nodes`),
+};
+
+// ── Skill version history ─────────────────────────────────────────────────────
+export const skillVersionsApi = {
+  list: (skillId: number) => api.get(`/api/skills/${skillId}/versions`),
+  create: (skillId: number, data: { content_markdown?: string; change_notes?: string }) =>
+    api.post(`/api/skills/${skillId}/versions`, data),
+  get: (skillId: number, versionNumber: number) =>
+    api.get(`/api/skills/${skillId}/versions/${versionNumber}`),
+};
+
+// ── Bot preview prompt ────────────────────────────────────────────────────────
+export const botsApi = {
+  previewPrompt: (botId: number) => api.get(`/api/bots/${botId}/preview-prompt`),
+};

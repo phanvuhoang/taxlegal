@@ -42,6 +42,30 @@ export const casesApi = {
   getFinal: (id: string) => api.get(`/api/cases/${id}/final`),
 };
 
+export interface WorkflowNode {
+  id: string;
+  workflow_id: string;
+  node_id: string;
+  node_type: string;
+  label: string;
+  bot_definition_id: number | null;
+  skill_ids: number[];
+  config: Record<string, unknown>;
+  position_x: number | null;
+  position_y: number | null;
+  created_at: string;
+}
+
+export interface WorkflowEdge {
+  id: string;
+  workflow_id: string;
+  from_node: string;
+  to_node: string;
+  condition: string | null;
+  label: string | null;
+  created_at: string;
+}
+
 export interface WorkflowDefinition {
   id: string;
   name: string;
@@ -54,6 +78,9 @@ export interface WorkflowDefinition {
   entry_node: string | null;
   graph_definition: Record<string, unknown>;
   created_at: string;
+  // returned by GET /api/workflows/{id}
+  nodes?: WorkflowNode[];
+  edges?: WorkflowEdge[];
 }
 
 export const workflowsApi = {

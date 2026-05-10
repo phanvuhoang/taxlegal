@@ -46,6 +46,7 @@ class WorkflowDefinitionUpdate(BaseModel):
     practice_area: Optional[str] = None
     entry_node: Optional[str] = None
     is_active: Optional[bool] = None
+    graph_definition: Optional[Any] = None
 
 
 class WorkflowNodeCreate(BaseModel):
@@ -162,8 +163,15 @@ async def update_workflow_definition(
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    set_clauses = ", ".join([f"{k} = :{k}" for k in updates])
-    set_clauses += ", updated_at = :now"
+    # graph_definition is JSONB — must be cast explicitly
+    set_parts = []
+    for k in updates:
+        if k == "graph_definition":
+            set_parts.append(f"{k} = :{k}::jsonb")
+            updates[k] = json.dumps(updates[k]) if not isinstance(updates[k], str) else updates[k]
+        else:
+            set_parts.append(f"{k} = :{k}")
+    set_clauses = ", ".join(set_parts) + ", updated_at = :now"
     updates["now"] = now
     updates["workflow_id"] = workflow_id
 
@@ -204,7 +212,8 @@ async def list_workflow_definitions(
         result = await db.execute(
             text(f"""
                 SELECT id, name, slug, description, practice_area, entry_node,
-                       version, is_active, is_default, created_at, updated_at
+                       version, is_active, is_default, graph_definition,
+                       created_at, updated_at
                 FROM taxlegal.workflow_definitions
                 {where}
                 ORDER BY is_default DESC, created_at DESC
@@ -495,6 +504,32 @@ async def add_workflow_edge(
         "label": req.label,
         "created_at": now.isoformat(),
     }
+
+
+@router.get("/api/workflows/{workflow_id}/nodes")
+async def get_workflow_nodes(
+    workflow_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """List all nodes for a workflow definition."""
+    try:
+        result = await db.execute(
+            text("SELECT * FROM taxlegal.workflow_nodes WHERE workflow_id = :id ORDER BY created_at"),
+            {"id": workflow_id},
+        )
+        rows = result.mappings().fetchall()
+        nodes = [dict(r) for r in rows]
+        for n in nodes:
+            if n.get("created_at") and hasattr(n["created_at"], "isoformat"):
+                n["created_at"] = n["created_at"].isoformat()
+            if n.get("updated_at") and hasattr(n["updated_at"], "isoformat"):
+                n["updated_at"] = n["updated_at"].isoformat()
+            n["id"] = str(n["id"])
+        return nodes
+    except Exception as e:
+        logger.warning(f"workflow_nodes GET error: {e}")
+        return []
 
 
 @router.delete("/api/workflows/{workflow_id}/nodes/{node_id}", status_code=204)

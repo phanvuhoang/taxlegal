@@ -1,4 +1,8 @@
-"""Law documents API — search local cache + dbvntax reference."""
+"""Law documents API — search local cache + dbvntax reference.
+
+DB-FIRST POLICY: All search endpoints query taxlegal.law_documents_v2 (internal DB)
+and/or dbvntax first. There is NO web search in this module. Confirmed compliant.
+"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, text

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { skillsApi } from "../lib/api";
-import { Plus, X, Eye, Edit2, Trash2, Tag, Bot } from "lucide-react";
+import { skillsApi, skillVersionsApi } from "../lib/api";
+import { Plus, X, Eye, Edit2, Trash2, Tag, Clock, RotateCcw, FilePlus } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface Skill {
@@ -72,18 +72,32 @@ const EMPTY_SKILL: Omit<Skill, "id" | "created_at" | "updated_at"> = {
   is_builtin: false,
 };
 
+interface SkillVersion {
+  id: number;
+  skill_id: number;
+  version_number: number;
+  content_markdown: string;
+  change_notes: string | null;
+  created_at: string;
+}
+
 export default function AdminSkills() {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState("Tất cả");
   const [botFilter, setBotFilter] = useState("Tất cả");
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
-  const [panelTab, setPanelTab] = useState<"view" | "edit" | "preview">("view");
+  const [panelTab, setPanelTab] = useState<"view" | "edit" | "preview" | "history">("view");
   const [editForm, setEditForm] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState<any>({ ...EMPTY_SKILL });
   const [creating, setCreating] = useState(false);
+
+  // Version history state
+  const [versions, setVersions] = useState<SkillVersion[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+  const [savingVersion, setSavingVersion] = useState(false);
 
   const fetchSkills = () => {
     setLoading(true);
@@ -111,6 +125,45 @@ export default function AdminSkills() {
       tags: skill.tags.join(", "),
     });
     setPanelTab("view");
+    setVersions([]);
+  };
+
+  const loadVersions = async (skillId: number) => {
+    setVersionsLoading(true);
+    try {
+      const res = await skillVersionsApi.list(skillId);
+      setVersions(Array.isArray(res.data) ? res.data : []);
+    } catch {
+      toast.error("Không tải được lịch sử version");
+      setVersions([]);
+    } finally {
+      setVersionsLoading(false);
+    }
+  };
+
+  const handleSaveNewVersion = async () => {
+    if (!selectedSkill || !editForm) return;
+    const notes = window.prompt("Nhập change notes (tùy chọn):") ?? "";
+    setSavingVersion(true);
+    try {
+      await skillVersionsApi.create(selectedSkill.id, {
+        content_markdown: editForm.content_markdown,
+        change_notes: notes || undefined,
+      });
+      toast.success("Đã lưu version mới");
+      loadVersions(selectedSkill.id);
+    } catch {
+      toast.error("Lưu version thất bại");
+    } finally {
+      setSavingVersion(false);
+    }
+  };
+
+  const handleRestoreVersion = (version: SkillVersion) => {
+    if (!editForm) return;
+    setEditForm({ ...editForm, content_markdown: version.content_markdown });
+    setPanelTab("edit");
+    toast.success(`Đã nạp nội dung version #${version.version_number} — nhấn Lưu để lưu lại`);
   };
 
   const closePanel = () => {
@@ -339,17 +392,22 @@ export default function AdminSkills() {
 
           {/* Tabs */}
           <div className="flex border-b border-gray-100 px-5">
-            {(["view", "edit", "preview"] as const).map((tab) => (
+            {(["view", "edit", "preview", "history"] as const).map((tab) => (
               <button
                 key={tab}
-                onClick={() => setPanelTab(tab)}
-                className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                onClick={() => {
+                  setPanelTab(tab);
+                  if (tab === "history" && selectedSkill && versions.length === 0) {
+                    loadVersions(selectedSkill.id);
+                  }
+                }}
+                className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                   panelTab === tab
                     ? "border-green-600 text-green-700"
                     : "border-transparent text-gray-500 hover:text-gray-700"
                 }`}
               >
-                {tab === "view" ? "Chi tiết" : tab === "edit" ? "Chỉnh sửa" : "Preview MD"}
+                {tab === "view" ? "Chi tiết" : tab === "edit" ? "Chỉnh sửa" : tab === "preview" ? "Preview" : "History"}
               </button>
             ))}
           </div>
@@ -606,6 +664,69 @@ export default function AdminSkills() {
                     __html: simpleMarkdown(editForm.content_markdown || selectedSkill.content_markdown),
                   }}
                 />
+              </div>
+            )}
+
+            {panelTab === "history" && (
+              <div className="space-y-3">
+                {/* Save new version action */}
+                {!selectedSkill.is_builtin && (
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-gray-500">{versions.length} version(s) stored</p>
+                    <button
+                      onClick={handleSaveNewVersion}
+                      disabled={savingVersion}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-lg disabled:opacity-60"
+                      style={{ background: "#028a39" }}
+                    >
+                      <FilePlus className="w-3 h-3" />
+                      {savingVersion ? "Saving..." : "Save New Version"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Version list */}
+                {versionsLoading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="w-5 h-5 border-2 border-gray-200 border-t-green-600 rounded-full animate-spin" />
+                  </div>
+                ) : versions.length === 0 ? (
+                  <div className="text-center py-10 text-gray-400">
+                    <Clock className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-xs">Chưa có version nào được lưu</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {versions.map((ver) => (
+                      <div key={ver.id} className="border border-gray-100 rounded-lg p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded text-xs font-mono font-medium">
+                                v#{ver.version_number}
+                              </span>
+                              <span className="text-xs text-gray-400">
+                                {new Date(ver.created_at).toLocaleString("vi-VN")}
+                              </span>
+                            </div>
+                            {ver.change_notes && (
+                              <p className="text-xs text-gray-600 line-clamp-2">{ver.change_notes}</p>
+                            )}
+                          </div>
+                          {!selectedSkill.is_builtin && (
+                            <button
+                              onClick={() => handleRestoreVersion(ver)}
+                              className="flex items-center gap-1 px-2 py-1 text-xs rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 shrink-0"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              Restore
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

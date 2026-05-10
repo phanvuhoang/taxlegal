@@ -3,6 +3,9 @@ Pipeline Engine — orchestrates 7-step agent pipeline.
 Each step runs sequentially, saves to DB, then waits for approval (manual mode)
 or continues automatically (auto mode).
 """
+# CRITICAL: DB-first retrieval policy enforced.
+# Internal DB is always queried first. Web search is FALLBACK ONLY.
+# Never fabricate legal citations. Insufficient coverage → say so explicitly.
 import asyncio
 import json
 import logging
@@ -21,6 +24,16 @@ from backend.agents.prompts import (
     JA_RESEARCH_SYSTEM_PROMPT, SA_REVIEW_SYSTEM_PROMPT,
     PARTNER_P2_SYSTEM_PROMPT, PARTNER_P3_SYSTEM_PROMPT,
 )
+
+try:
+    from backend.retrieval.service import RetrievalService, query_internal_db
+    from backend.retrieval.prompt_guard import DB_FIRST_SYSTEM_ADDENDUM, build_retrieval_context_block
+    _retrieval_svc = RetrievalService()
+    RETRIEVAL_AVAILABLE = True
+except ImportError:
+    RETRIEVAL_AVAILABLE = False
+    DB_FIRST_SYSTEM_ADDENDUM = ""
+    def build_retrieval_context_block(result): return ""
 
 logger = logging.getLogger(__name__)
 
@@ -78,20 +91,54 @@ async def build_step_input(db: AsyncSession, matter: Matter, step_number: int) -
 
 async def run_intake_step(db: AsyncSession, matter: Matter, step: PipelineStep, model_id: str, provider: str, bot_variant=None):
     """Step 1: Intake Enhancer"""
-    # First, do preliminary web searches for fact/law verification
+    # DB-first retrieval for applicable laws
     searches = []
-    # Search for applicable laws
-    law_search = await web_search(
-        f"Luật Việt Nam áp dụng cho: {matter.client_request[:200]} — văn bản pháp lý hiện hành 2024 2025",
-        context="legal research Vietnam"
-    )
-    searches.append({"query": "applicable laws", "result": law_search})
+    law_context_block = ""
+    intake_query = f"Luật Việt Nam áp dụng cho: {matter.client_request[:200]}"
+
+    if RETRIEVAL_AVAILABLE:
+        # FIRST: query internal DB
+        db_results = await query_internal_db(intake_query, db)
+        if db_results:
+            # DB has results — use them, no web search needed
+            from backend.retrieval.service import RetrievalResult
+            retrieval_result = RetrievalResult(
+                query=intake_query,
+                db_results=db_results,
+                web_results=[],
+                used_fallback=False,
+                insufficient_coverage=False,
+                citations=[],
+                total_results=len(db_results),
+            )
+            law_context_block = build_retrieval_context_block(retrieval_result)
+            searches.append({"query": "applicable laws", "source": "internal_db", "count": len(db_results)})
+        else:
+            # DB empty — fall back to web search
+            law_search = await web_search(
+                f"{intake_query} — văn bản pháp lý hiện hành 2024 2025",
+                context="legal research Vietnam"
+            )
+            law_context_block = json.dumps(law_search, ensure_ascii=False, indent=2)
+            searches.append({"query": "applicable laws", "source": "web_fallback", "result": law_search})
+    else:
+        # Retrieval module unavailable — direct web search fallback
+        law_search = await web_search(
+            f"{intake_query} — văn bản pháp lý hiện hành 2024 2025",
+            context="legal research Vietnam"
+        )
+        law_context_block = json.dumps(law_search, ensure_ascii=False, indent=2)
+        searches.append({"query": "applicable laws", "source": "web_fallback", "result": law_search})
+
+    # Build system prompt with DB-first addendum
+    base_system = await build_system_prompt_with_skills(db, INTAKE_SYSTEM_PROMPT, bot_variant)
+    system_prompt_with_guard = base_system + "\n" + DB_FIRST_SYSTEM_ADDENDUM
 
     prompt = f"""## YÊU CẦU CỦA KHÁCH HÀNG
 {matter.client_request}
 
-## KẾT QUẢ TÌM KIẾM WEB BAN ĐẦU
-{json.dumps(law_search, ensure_ascii=False, indent=2)}
+## NGUỒN PHÁP LÝ TRUY XUẤT (DB-FIRST)
+{law_context_block}
 
 Hãy phân tích và tạo Enriched Request theo đúng format JSON đã được định nghĩa trong system prompt.
 Tập trung vào việc xác minh sự kiện, kiểm tra hiệu lực luật, và xây dựng completeness matrix đầy đủ."""
@@ -99,7 +146,7 @@ Tập trung vào việc xác minh sự kiện, kiểm tra hiệu lực luật, v
     result = await call_ai(
         model_id=model_id,
         messages=[{"role": "user", "content": prompt}],
-        system_prompt=await build_system_prompt_with_skills(db, INTAKE_SYSTEM_PROMPT, bot_variant),
+        system_prompt=system_prompt_with_guard,
         temperature=0.2,
         max_tokens=8000,
         provider=provider,
@@ -234,15 +281,43 @@ async def run_ja_research_step(db: AsyncSession, matter: Matter, step: PipelineS
         chunk_depth = chunk_def.get("depth", "STANDARD")
         chunk_id = chunk_def.get("chunk_id", 1)
 
-        # Web searches for this chunk
-        practical_search = await search_practical_guidance(chunk_issue, "luật Việt Nam")
-        search_queries.append({"chunk": chunk_id, "type": "practical", "query": chunk_issue})
+        # DB-FIRST retrieval for this chunk
+        retrieval_context_block = ""
+        chunk_insufficient = False
+        chunk_used_fallback = False
 
-        # Legal verification for laws mentioned in applicable_laws
+        if RETRIEVAL_AVAILABLE:
+            retrieval_result = await _retrieval_svc.retrieve(
+                query=chunk_issue,
+                db=db,
+            )
+            if retrieval_result.insufficient_coverage:
+                # Insufficient coverage — mark and skip further processing
+                chunk_insufficient = True
+                retrieval_context_block = build_retrieval_context_block(retrieval_result)
+                search_queries.append({"chunk": chunk_id, "type": "db_retrieval", "query": chunk_issue, "result": "insufficient source coverage"})
+            else:
+                retrieval_context_block = build_retrieval_context_block(retrieval_result)
+                if retrieval_result.used_fallback:
+                    chunk_used_fallback = True
+                search_queries.append({"chunk": chunk_id, "type": "db_retrieval", "query": chunk_issue,
+                                       "db_count": len(retrieval_result.db_results),
+                                       "used_fallback": retrieval_result.used_fallback})
+        else:
+            search_queries.append({"chunk": chunk_id, "type": "retrieval_unavailable", "query": chunk_issue})
+
+        # Legal verification for laws mentioned in applicable_laws (post-check only — not primary research)
         law_verifications = []
         for law in (matter.applicable_laws or [])[:3]:
             vr = await verify_law_currency(law.get("so_hieu", ""), "")
             law_verifications.append(vr)
+
+        # Source note for web fallback
+        source_note = ""
+        if chunk_used_fallback:
+            source_note = "\n\n> **Nguồn**: web search (chưa xác minh)"
+        elif chunk_insufficient:
+            source_note = "\n\n> **Cảnh báo**: Không đủ nguồn pháp lý (insufficient source coverage). Không thể kết luận dựa trên nguồn đã xác minh."
 
         chunk_prompt = f"""## CHUNK CẦN NGHIÊN CỨU
 Chunk ID: {chunk_id}
@@ -255,11 +330,11 @@ Yêu cầu khách hàng: {matter.client_request[:500]}
 Verified facts: {json.dumps(matter.verified_facts or [], ensure_ascii=False)}
 Partner brief guidance: {json.dumps(matter.partner_brief or {}, ensure_ascii=False)[:1000]}
 
-## KẾT QUẢ TÌM KIẾM THỰC TIỄN
-{json.dumps(practical_search, ensure_ascii=False, indent=2)[:2000]}
+{retrieval_context_block}
 
-## LUẬT ĐÃ XÁC MINH HIỆU LỰC
+## LUẬT ĐÃ XÁC MINH HIỆU LỰC (post-check)
 {json.dumps(law_verifications, ensure_ascii=False, indent=2)[:2000]}
+{source_note}
 
 Hãy thực hiện đầy đủ 5 phases (A, B1, B2, B2.5, C) và tạo:
 1. JSON nghiên cứu (phase outputs)

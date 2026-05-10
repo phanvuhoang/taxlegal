@@ -128,8 +128,9 @@ async def create_case(
         raise HTTPException(status_code=500, detail=f"Failed to create case: {e}")
 
     # Create corresponding matters row for backward compatibility
+    # and store the returned matter_id back into taxlegal.cases.
     try:
-        await db.execute(
+        matter_result = await db.execute(
             text("""
                 INSERT INTO taxlegal.matters
                     (user_id, title, client_request, practice_area, pipeline_mode,
@@ -139,6 +140,7 @@ async def create_case(
                     (:user_id, :title, :client_request, :practice_area, :pipeline_mode,
                      :output_language, 'draft', 0, :pipeline_template_id,
                      FALSE, :now)
+                RETURNING id
             """),
             {
                 "user_id": current_user.id,
@@ -151,6 +153,25 @@ async def create_case(
                 "now": now,
             },
         )
+        matter_row = matter_result.one_or_none()
+        if matter_row:
+            new_matter_id = matter_row[0]
+            # Store matter_id back into taxlegal.cases for legacy pipeline lookup
+            try:
+                await db.execute(
+                    text("""
+                        UPDATE taxlegal.cases
+                        SET matter_id = :matter_id
+                        WHERE id = :case_id
+                    """),
+                    {"matter_id": new_matter_id, "case_id": case_id},
+                )
+            except Exception as update_err:
+                logger.warning(
+                    f"Could not set matter_id={new_matter_id} on case {case_id}: {update_err}"
+                )
+        else:
+            logger.warning(f"matters INSERT returned no id for case {case_id}")
     except Exception as e:
         logger.warning(f"Could not create backward-compat matter row: {e}")
 
@@ -347,13 +368,12 @@ async def start_workflow(
         await db.execute(
             text("""
                 INSERT INTO taxlegal.workflow_runs
-                    (id, case_id, status, state, started_at, created_at, updated_at)
+                    (id, case_id, status, state, started_at, created_at)
                 VALUES
-                    (:id, :case_id, 'running', '{}', :now, :now, :now)
+                    (:id, :case_id, 'running', '{}', :now, :now)
                 ON CONFLICT (case_id) DO UPDATE SET
                     status = 'running',
-                    started_at = :now,
-                    updated_at = :now
+                    started_at = :now
             """),
             {"id": run_id, "case_id": case_id, "now": now},
         )
@@ -395,10 +415,10 @@ async def start_workflow(
         await db.execute(
             text("""
                 INSERT INTO taxlegal.case_events
-                    (id, case_id, event_type, event_data, created_by, created_at)
+                    (id, case_id, event_type, node_name, data, created_at)
                 VALUES
                     (:id, :case_id, 'workflow_started',
-                     :data, :user_id, :now)
+                     'start', :data::jsonb, :now)
             """),
             {
                 "id": event_id,
@@ -433,7 +453,7 @@ async def get_case_state(
     try:
         result = await db.execute(
             text("""
-                SELECT id, case_id, status, state, started_at, completed_at, updated_at
+                SELECT id, case_id, status, state, started_at, completed_at
                 FROM taxlegal.workflow_runs
                 WHERE case_id = :case_id
                 ORDER BY created_at DESC
@@ -456,7 +476,6 @@ async def get_case_state(
         "state": row["state"] or {},
         "started_at": row["started_at"].isoformat() if row["started_at"] else None,
         "completed_at": row["completed_at"].isoformat() if row["completed_at"] else None,
-        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
     }
 
 
@@ -472,7 +491,7 @@ async def list_case_events(
     try:
         result = await db.execute(
             text("""
-                SELECT id, case_id, event_type, event_data, created_by, created_at
+                SELECT id, case_id, event_type, node_name, data, created_at
                 FROM taxlegal.case_events
                 WHERE case_id = :case_id
                 ORDER BY created_at ASC
@@ -489,8 +508,8 @@ async def list_case_events(
             "id": str(r["id"]),
             "case_id": str(r["case_id"]),
             "event_type": r["event_type"],
-            "event_data": r["event_data"] or {},
-            "created_by": r["created_by"],
+            "node_name": r["node_name"],
+            "data": r["data"] or {},
             "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         }
         for r in rows
@@ -607,7 +626,9 @@ async def submit_human_approval(
         logger.warning(f"Temporal signal skipped (not available): {e}")
 
     # Update case status based on decision
-    new_status = "approved" if decision == "approved" else "rejected"
+    # 'approved' → 'delivered' (fully approved, output ready)
+    # 'rejected' → 'failed'
+    new_status = "delivered" if decision == "approved" else "failed"
     try:
         await db.execute(
             text("UPDATE taxlegal.cases SET status = :status, updated_at = :now WHERE id = :id"),
@@ -622,9 +643,9 @@ async def submit_human_approval(
         await db.execute(
             text("""
                 INSERT INTO taxlegal.case_events
-                    (id, case_id, event_type, event_data, created_by, created_at)
+                    (id, case_id, event_type, node_name, data, created_at)
                 VALUES
-                    (:id, :case_id, 'human_approval', :data, :user_id, :now)
+                    (:id, :case_id, 'human_approval_decision', 'human_approval', :data::jsonb, :now)
             """),
             {
                 "id": event_id,
@@ -645,7 +666,7 @@ async def submit_human_approval(
         "notes": req.notes,
         "decided_by": current_user.id,
         "decided_at": now.isoformat(),
-        "case_status": new_status,
+        "case_status": new_status,  # 'delivered' if approved, 'failed' if rejected
     }
 
 
@@ -656,48 +677,183 @@ async def get_final_output(
     db: AsyncSession = Depends(get_db),
 ):
     """Get the final output for a completed case."""
+    from fastapi.responses import JSONResponse
     case = await _get_case_or_404(db, case_id, current_user)
 
-    final_output = case.get("final_output")
-    if final_output is None:
-        return {
-            "case_id": case_id,
-            "status": case.get("status"),
-            "final_output": None,
-            "message": "Final output not yet available",
-        }
+    current_status = case.get("status")
 
+    # Status gate: only return final output if the case is delivered
+    if current_status != "delivered":
+        return JSONResponse(
+            status_code=202,
+            content={
+                "status": "not_ready",
+                "message": "Workflow chưa hoàn tất",
+                "current_status": current_status,
+            },
+        )
+
+    final_output = case.get("final_output")
     return {
         "case_id": case_id,
-        "status": case.get("status"),
+        "status": current_status,
         "final_output": final_output,
     }
 
 
 # ── Background helpers ─────────────────────────────────────────────────────────
 
+async def _log_case_event(
+    case_id: str,
+    event_type: str,
+    node_name: str,
+    data: dict,
+    db,
+) -> None:
+    """Insert a case_event audit record. Non-fatal — wrapped in try/except."""
+    try:
+        await db.execute(
+            text("""
+                INSERT INTO taxlegal.case_events (id, case_id, event_type, node_name, data, created_at)
+                VALUES (gen_random_uuid(), :case_id, :event_type, :node, :data::jsonb, NOW())
+            """),
+            {
+                "case_id": case_id,
+                "event_type": event_type,
+                "node": node_name,
+                "data": json.dumps(data),
+            },
+        )
+        await db.commit()
+    except Exception as e:
+        logger.debug(f"_log_case_event failed (table may not exist yet): {e}")
+
+
 async def _run_legacy_pipeline_bg(case_id: str, model_override: Optional[str] = None):
     """Run legacy pipeline in background for a case."""
     from backend.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
+        # Look up case
         try:
-            # Import pipeline lazily
-            try:
-                from backend.agents.pipeline import execute_pipeline_step
-            except ImportError as e:
-                logger.warning(f"Could not import pipeline: {e}")
-                return
-
-            # Look up related matter_id by case title
             result = await db.execute(
-                text("SELECT id FROM taxlegal.cases WHERE id = :id"),
+                text("SELECT id, matter_id FROM taxlegal.cases WHERE id = :id"),
                 {"id": case_id},
             )
-            row = result.one_or_none()
+            row = result.mappings().one_or_none()
             if not row:
                 logger.warning(f"Case {case_id} not found for legacy pipeline")
                 return
-
-            logger.info(f"Legacy pipeline started for case {case_id}")
         except Exception as e:
-            logger.error(f"Legacy pipeline background task failed for case {case_id}: {e}")
+            logger.error(f"Legacy pipeline: case lookup failed for {case_id}: {e}")
+            return
+
+        logger.info(f"Legacy pipeline started for case {case_id}")
+
+        # Import pipeline lazily
+        try:
+            from backend.agents.pipeline import execute_pipeline_step
+        except ImportError as e:
+            logger.warning(f"Could not import pipeline: {e}")
+            await _log_case_event(case_id, "pipeline_error", "import",
+                                  {"error": str(e)}, db)
+            return
+
+        # Run all 7 steps
+        final_output = None
+        run_failed = False
+        for step_number in range(1, 8):
+            step_info_map = {
+                1: "intake", 2: "partner_p1", 3: "sa_blueprint",
+                4: "ja_research", 5: "sa_review", 6: "partner_p2", 7: "partner_p3",
+            }
+            node_name = step_info_map.get(step_number, f"step_{step_number}")
+            try:
+                # Retrieve matter_id from case row
+                matter_id = row.get("matter_id")
+                if not matter_id:
+                    logger.warning(f"Case {case_id} has no matter_id — cannot run legacy pipeline")
+                    run_failed = True
+                    break
+
+                step = await execute_pipeline_step(
+                    db=db,
+                    matter_id=matter_id,
+                    step_number=step_number,
+                    model_override=model_override,
+                )
+
+                # Log step completion event
+                await _log_case_event(
+                    case_id,
+                    "step_completed",
+                    node_name,
+                    {
+                        "step_number": step_number,
+                        "step_name": node_name,
+                        "status": step.status if step else "unknown",
+                        "word_count": step.word_count if step else 0,
+                    },
+                    db,
+                )
+
+                # Capture final output from step 7
+                if step_number == 7 and step:
+                    final_output = step.output_markdown
+
+            except Exception as e:
+                logger.error(f"Legacy pipeline step {step_number} failed for case {case_id}: {e}")
+                await _log_case_event(
+                    case_id,
+                    "step_failed",
+                    node_name,
+                    {"step_number": step_number, "error": str(e)},
+                    db,
+                )
+                run_failed = True
+                break
+
+        # Update case and workflow_run status
+        final_case_status = "failed" if run_failed else "delivered"
+        now = __import__('datetime').datetime.utcnow()
+
+        try:
+            update_params: dict = {"status": final_case_status, "now": now, "id": case_id}
+            if final_output and not run_failed:
+                await db.execute(
+                    text("UPDATE taxlegal.cases SET status = :status, final_output = :final_output, updated_at = :now WHERE id = :id"),
+                    {"status": final_case_status, "final_output": final_output, "now": now, "id": case_id},
+                )
+            else:
+                await db.execute(
+                    text("UPDATE taxlegal.cases SET status = :status, updated_at = :now WHERE id = :id"),
+                    update_params,
+                )
+            await db.commit()
+        except Exception as e:
+            logger.error(f"Could not update case status after pipeline: {e}")
+
+        # Update workflow_run status
+        wr_status = "failed" if run_failed else "completed"
+        try:
+            await db.execute(
+                text("""
+                    UPDATE taxlegal.workflow_runs
+                    SET status = :status, completed_at = :now
+                    WHERE case_id = :case_id
+                """),
+                {"status": wr_status, "now": now, "case_id": case_id},
+            )
+            await db.commit()
+        except Exception as e:
+            logger.debug(f"workflow_runs update failed (non-fatal): {e}")
+
+        # Log pipeline completion event
+        await _log_case_event(
+            case_id,
+            "pipeline_completed" if not run_failed else "pipeline_failed",
+            "legacy_pipeline",
+            {"status": final_case_status, "steps_run": 7 if not run_failed else "partial"},
+            db,
+        )
+
+        logger.info(f"Legacy pipeline {'completed' if not run_failed else 'FAILED'} for case {case_id}")

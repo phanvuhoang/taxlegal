@@ -57,8 +57,7 @@ export default function WorkflowEditor() {
 
   useEffect(() => { loadWorkflows(); }, []);
 
-  const selectWorkflow = (wf: WorkflowDefinition) => {
-    setSelected(wf);
+  const selectWorkflow = async (wf: WorkflowDefinition) => {
     setValidationResult(null);
     try {
       setJsonText(JSON.stringify(wf.graph_definition ?? {}, null, 2));
@@ -66,6 +65,17 @@ export default function WorkflowEditor() {
     } catch {
       setJsonText("{}");
     }
+    // Fetch full detail (with DB nodes/edges) if not already loaded
+    if (!wf.nodes) {
+      try {
+        const res = await workflowsApi.get(wf.id);
+        setSelected(res.data);
+        return;
+      } catch {
+        // fall through to set with what we have
+      }
+    }
+    setSelected(wf);
   };
 
   const handleJsonChange = (val: string) => {
@@ -349,7 +359,12 @@ export default function WorkflowEditor() {
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                   <h3 className="text-sm font-semibold text-gray-700">
-                    Nodes <span className="text-gray-400 font-normal">({nodes.length})</span>
+                    Nodes{" "}
+                    <span className="text-gray-400 font-normal">({nodes.length} in graph</span>
+                    {selected.nodes !== undefined && (
+                      <span className="text-gray-400 font-normal">, {selected.nodes.length} in DB</span>
+                    )}
+                    <span className="text-gray-400 font-normal">)</span>
                   </h3>
                   <button
                     onClick={() => setShowNodeForm(!showNodeForm)}
@@ -411,7 +426,12 @@ export default function WorkflowEditor() {
               <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                   <h3 className="text-sm font-semibold text-gray-700">
-                    Edges <span className="text-gray-400 font-normal">({edges.length})</span>
+                    Edges{" "}
+                    <span className="text-gray-400 font-normal">({edges.length} in graph</span>
+                    {selected.edges !== undefined && (
+                      <span className="text-gray-400 font-normal">, {selected.edges.length} in DB</span>
+                    )}
+                    <span className="text-gray-400 font-normal">)</span>
                   </h3>
                   <button
                     onClick={() => setShowEdgeForm(!showEdgeForm)}
