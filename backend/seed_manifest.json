@@ -1,0 +1,243 @@
+{
+  "_meta": {
+    "version": "2.0.0",
+    "description": "TaxLegal Vietnam Tax Seed Manifest — reference file for all seeded skills, bot variants, and pipeline templates",
+    "last_updated": "2026-05-10",
+    "note": "This file is for human reference only. Actual seeding is done via startup.py. Edit startup.py to change seed data."
+  },
+  "skills": {
+    "from_files": [
+      {
+        "file": "skills/vietnam-vat.md",
+        "name": "vietnam-vat",
+        "category": "tax",
+        "description": "VAT toàn diện — Luật 48/2024, thuế suất, khấu trừ, hoàn thuế, FCT-VAT",
+        "applicable_bots": ["ja-vat", "partner-vat", "ja-advisory"]
+      },
+      {
+        "file": "skills/vietnam-cit.md",
+        "name": "vietnam-cit",
+        "category": "tax",
+        "description": "Thuế TNDN — ưu đãi, khấu hao, chuyển lỗ, phân bổ chi phí",
+        "applicable_bots": ["ja-cit", "partner-cit", "sa-cit"]
+      },
+      {
+        "file": "skills/vietnam-pit.md",
+        "name": "vietnam-pit",
+        "category": "tax",
+        "description": "Thuế TNCN — biểu thuế lũy tiến, giảm trừ, quyết toán",
+        "applicable_bots": ["ja-pit", "partner-pit"]
+      },
+      {
+        "file": "skills/vietnam-fct.md",
+        "name": "vietnam-fct",
+        "category": "tax",
+        "description": "FCT — nhà thầu nước ngoài, phương pháp kê khai, FCT-VAT/CIT",
+        "applicable_bots": ["ja-fct", "partner-fct"]
+      },
+      {
+        "file": "skills/vietnam-transfer-pricing.md",
+        "name": "vietnam-transfer-pricing",
+        "category": "tax",
+        "description": "Transfer Pricing — NĐ 132/2020, ALP, phương pháp, Country-by-Country",
+        "applicable_bots": ["ja-tp", "partner-tp"]
+      },
+      {
+        "file": "skills/vietnam-dta.md",
+        "name": "vietnam-dta",
+        "category": "tax",
+        "description": "Tax Treaties / DTA — 80+ hiệp định, WHT reduction, beneficial ownership",
+        "applicable_bots": ["ja-fct", "ja-intl-tax", "partner-intl-tax"]
+      },
+      {
+        "file": "skills/vietnam-sct.md",
+        "name": "vietnam-sct",
+        "category": "tax",
+        "description": "Thuế TTĐB cơ bản — đối tượng, biểu thuế suất",
+        "applicable_bots": ["ja-default"]
+      },
+      {
+        "file": "skills/vietnam-invoices.md",
+        "name": "vietnam-invoices",
+        "category": "tax",
+        "description": "Hóa đơn điện tử — quy định, xử lý, hóa đơn rủi ro",
+        "applicable_bots": ["ja-vat", "ja-compliance"]
+      },
+      {
+        "file": "skills/vietnam-tax-admin.md",
+        "name": "vietnam-tax-admin",
+        "category": "tax",
+        "description": "Quản lý thuế — thanh tra, kiểm tra, quy trình khiếu nại",
+        "applicable_bots": ["ja-tax-admin"]
+      },
+      {
+        "file": "skills/advisory-memo.md",
+        "name": "advisory-memo",
+        "category": "process",
+        "description": "Cấu trúc và tiêu chuẩn chất lượng advisory memo",
+        "applicable_bots": ["ja-advisory", "sa-advisory"]
+      },
+      {
+        "file": "skills/tax-compliance.md",
+        "name": "tax-compliance",
+        "category": "process",
+        "description": "Khung kiểm tra tuân thủ thuế",
+        "applicable_bots": ["ja-compliance", "sa-compliance"]
+      },
+      {
+        "file": "skills/tax-return.md",
+        "name": "tax-return",
+        "category": "process",
+        "description": "Chuẩn bị tờ khai thuế — quy trình và checklist",
+        "applicable_bots": ["ja-compliance"]
+      },
+      {
+        "file": "skills/tax-strategy.md",
+        "name": "tax-strategy",
+        "category": "process",
+        "description": "Chiến lược thuế — lập kế hoạch và tối ưu hóa",
+        "applicable_bots": ["ja-advisory"]
+      },
+      {
+        "file": "skills/vietnam-sst-advanced.md",
+        "name": "vietnam-sst-advanced",
+        "category": "tax",
+        "description": "TTĐB nâng cao — phân loại hàng hóa, biểu thuế suất chi tiết, khấu trừ TTĐB, xuất khẩu miễn thuế",
+        "applicable_bots": ["ja-sst", "partner-sst", "sa-advisory"]
+      },
+      {
+        "file": "skills/vietnam-intl-tax.md",
+        "name": "vietnam-intl-tax",
+        "category": "tax",
+        "description": "Thuế quốc tế — PE risk, FTC, BEPS/Pillar Two, indirect transfer, beneficial ownership",
+        "applicable_bots": ["ja-intl-tax", "partner-intl-tax", "sa-advisory"]
+      },
+      {
+        "file": "skills/compliance-checklist.md",
+        "name": "compliance-checklist",
+        "category": "process",
+        "description": "Quy trình compliance — data request, reconciliation, filing gate, red flags, escalation",
+        "applicable_bots": ["ja-compliance", "sa-compliance"]
+      },
+      {
+        "file": "skills/advisory-workflow.md",
+        "name": "advisory-workflow",
+        "category": "process",
+        "description": "Quy trình tư vấn — intake normalization, IRAC, SA/Partner review checklists",
+        "applicable_bots": ["ja-advisory", "sa-advisory"]
+      },
+      {
+        "file": "skills/pit-advanced.md",
+        "name": "pit-advanced",
+        "category": "tax",
+        "description": "PIT nâng cao — expats, RSU/equity, benefits-in-kind, cá nhân kinh doanh, phân bổ xuyên biên giới",
+        "applicable_bots": ["ja-pit", "partner-pit"]
+      },
+      {
+        "file": "skills/source-hierarchy.md",
+        "name": "source-hierarchy",
+        "category": "process",
+        "description": "Phân cấp nguồn pháp lý VN, DB-first retrieval order, chuẩn trích dẫn",
+        "applicable_bots": ["ja-default", "ja-advisory", "ja-compliance", "ja-pit", "ja-vat", "ja-cit", "ja-sst", "ja-intl-tax", "ja-fct", "ja-tp"]
+      }
+    ]
+  },
+  "bot_variants": {
+    "intake": [
+      {"slug": "intake-default", "name": "Intake Enhancer (Default)", "skills": []}
+    ],
+    "partner": [
+      {"slug": "partner-default", "name": "Partner Bot (Default)", "skills": []},
+      {"slug": "partner-cit", "name": "Partner Bot — CIT Specialist", "skills": ["vietnam-cit"]},
+      {"slug": "partner-vat", "name": "Partner Bot — VAT Specialist", "skills": ["vietnam-vat"]},
+      {"slug": "partner-fct", "name": "Partner Bot — FCT Specialist", "skills": ["vietnam-fct"]},
+      {"slug": "partner-tp", "name": "Partner Bot — Transfer Pricing", "skills": ["vietnam-transfer-pricing"]},
+      {"slug": "partner-pit", "name": "Partner Bot — PIT Specialist", "skills": ["vietnam-pit", "pit-advanced"]},
+      {"slug": "partner-sst", "name": "Partner Bot — SST/TTĐB Specialist", "skills": ["vietnam-sst-advanced"]},
+      {"slug": "partner-intl-tax", "name": "Partner Bot — International Tax", "skills": ["vietnam-intl-tax", "vietnam-dta"]}
+    ],
+    "sa": [
+      {"slug": "sa-default", "name": "SA Bot (Default)", "skills": []},
+      {"slug": "sa-compliance", "name": "SA Bot — Compliance Review", "skills": ["compliance-checklist", "tax-compliance"]},
+      {"slug": "sa-advisory", "name": "SA Bot — Advisory Review", "skills": ["advisory-workflow", "advisory-memo"]},
+      {"slug": "sa-cit", "name": "SA Bot — CIT Specialist", "skills": ["vietnam-cit", "tax-compliance"]},
+      {"slug": "sa-vat", "name": "SA Bot — VAT Specialist", "skills": ["vietnam-vat", "tax-compliance"]}
+    ],
+    "ja": [
+      {"slug": "ja-default", "name": "JA Bot (Default)", "skills": []},
+      {"slug": "ja-advisory", "name": "JA Bot — Advisory", "skills": ["advisory-memo", "tax-strategy", "advisory-workflow", "source-hierarchy"]},
+      {"slug": "ja-compliance", "name": "JA Bot — Compliance", "skills": ["tax-compliance", "compliance-checklist", "source-hierarchy"]},
+      {"slug": "ja-fct", "name": "JA Bot — FCT Research", "skills": ["vietnam-fct", "vietnam-dta", "source-hierarchy"]},
+      {"slug": "ja-tp", "name": "JA Bot — Transfer Pricing", "skills": ["vietnam-transfer-pricing", "source-hierarchy"]},
+      {"slug": "ja-tax-admin", "name": "JA Bot — Tax Admin & Audit", "skills": ["vietnam-tax-admin"]},
+      {"slug": "ja-pit", "name": "JA Bot — PIT Specialist", "skills": ["vietnam-pit", "pit-advanced", "source-hierarchy"]},
+      {"slug": "ja-vat", "name": "JA Bot — VAT Specialist", "skills": ["vietnam-vat", "vietnam-invoices", "source-hierarchy"]},
+      {"slug": "ja-cit", "name": "JA Bot — CIT Specialist", "skills": ["vietnam-cit", "source-hierarchy"]},
+      {"slug": "ja-sst", "name": "JA Bot — SST/TTĐB Specialist", "skills": ["vietnam-sst-advanced", "source-hierarchy"]},
+      {"slug": "ja-intl-tax", "name": "JA Bot — International Tax", "skills": ["vietnam-intl-tax", "vietnam-dta", "source-hierarchy"]}
+    ]
+  },
+  "pipeline_templates": {
+    "generic": [
+      {
+        "slug": "standard-default",
+        "name": "Standard Default",
+        "description": "Pipeline mặc định — tất cả bước dùng bot mặc định",
+        "is_default": true,
+        "step_pattern": "intake-default → partner-default → sa-default → ja-default → sa-default → partner-default × 2"
+      },
+      {
+        "slug": "compliance-review-standard",
+        "name": "Compliance Review Standard",
+        "description": "Pipeline kiểm tra tuân thủ chuẩn — mọi loại thuế",
+        "step_pattern": "intake-default → partner-default → sa-default → ja-compliance → sa-compliance → partner-default × 2"
+      },
+      {
+        "slug": "advisory-memo-standard",
+        "name": "Advisory Memo Standard",
+        "description": "Pipeline advisory memo chuẩn — mọi loại thuế",
+        "step_pattern": "intake-default → partner-default → sa-advisory → ja-advisory → sa-advisory → partner-default × 2"
+      }
+    ],
+    "vat": [
+      {"slug": "vat-compliance-check", "name": "VAT Compliance Check", "bots_used": ["partner-vat", "ja-compliance"]},
+      {"slug": "vat-advisory-deep", "name": "VAT Advisory Deep", "bots_used": ["partner-vat", "ja-advisory"]}
+    ],
+    "cit": [
+      {"slug": "cit-compliance-check", "name": "CIT Compliance Check", "bots_used": ["partner-cit", "ja-compliance", "sa-compliance"]},
+      {"slug": "cit-advisory-deep", "name": "CIT Advisory Deep", "bots_used": ["partner-cit", "ja-advisory"]}
+    ],
+    "pit": [
+      {"slug": "pit-compliance-check", "name": "PIT Compliance Check", "bots_used": ["partner-default", "ja-compliance", "sa-compliance"]},
+      {"slug": "pit-advisory-deep", "name": "PIT Advisory Deep", "bots_used": ["partner-default", "ja-advisory"]},
+      {"slug": "pit-advisory-expat", "name": "PIT Advisory — Expat & Equity", "bots_used": ["partner-pit", "ja-pit", "sa-advisory"]}
+    ],
+    "fct": [
+      {"slug": "fct-advisory", "name": "FCT Advisory", "bots_used": ["partner-fct", "ja-fct"]}
+    ],
+    "transfer_pricing": [
+      {"slug": "transfer-pricing-review", "name": "Transfer Pricing Review", "bots_used": ["partner-tp", "ja-tp"]}
+    ],
+    "sst": [
+      {"slug": "sst-advisory", "name": "SST Advisory", "bots_used": ["partner-sst", "ja-sst", "sa-advisory"]},
+      {"slug": "sst-compliance-check", "name": "SST Compliance Check", "bots_used": ["partner-sst", "ja-sst", "sa-compliance"]}
+    ],
+    "international_tax": [
+      {"slug": "intl-tax-advisory", "name": "International Tax Advisory", "bots_used": ["partner-intl-tax", "ja-intl-tax", "sa-advisory"]},
+      {"slug": "dta-analysis", "name": "DTA Analysis", "bots_used": ["partner-intl-tax", "ja-intl-tax", "sa-advisory"]}
+    ]
+  },
+  "coverage_matrix": {
+    "description": "Tax type × Work type coverage (✓ = pipeline exists, - = not needed)",
+    "matrix": {
+      "VAT":    {"compliance": "vat-compliance-check", "advisory": "vat-advisory-deep"},
+      "CIT":    {"compliance": "cit-compliance-check", "advisory": "cit-advisory-deep"},
+      "PIT":    {"compliance": "pit-compliance-check", "advisory": "pit-advisory-deep / pit-advisory-expat"},
+      "FCT":    {"compliance": "-", "advisory": "fct-advisory"},
+      "TP":     {"compliance": "-", "advisory": "transfer-pricing-review"},
+      "SST":    {"compliance": "sst-compliance-check", "advisory": "sst-advisory"},
+      "IntlTax":{"compliance": "-", "advisory": "intl-tax-advisory / dta-analysis"},
+      "Generic":{"compliance": "compliance-review-standard", "advisory": "advisory-memo-standard"}
+    }
+  }
+}
