@@ -100,6 +100,26 @@ async def run_init_sql():
                 logger.warning(f"Column migration warning (may already exist): {e}")
     logger.info("Column migrations applied.")
 
+    # Run additional migration files (002, 003, ...)
+    migrations_dir = Path(__file__).parent / "migrations"
+    for migration_file in sorted(migrations_dir.glob("[0-9][0-9][0-9]_*.sql")):
+        try:
+            extra_sql = migration_file.read_text()
+            extra_stmts = [s.strip() for s in extra_sql.split(";") if s.strip() and not s.strip().startswith("--")]
+            ok2 = 0
+            skip2 = 0
+            for stmt in extra_stmts:
+                try:
+                    async with engine.begin() as conn:
+                        await conn.execute(text(stmt))
+                    ok2 += 1
+                except Exception as e:
+                    skip2 += 1
+                    logger.warning(f"[{migration_file.name}] stmt skipped: {str(e)[:120]}")
+            logger.info(f"Migration {migration_file.name}: {ok2} OK, {skip2} skipped.")
+        except Exception as e:
+            logger.warning(f"Migration file {migration_file.name} failed to load: {e}")
+
 
 async def seed_admin():
     """Create admin user if not exists."""
@@ -418,6 +438,149 @@ DEFAULT_BOT_VARIANTS = [
         "is_builtin": False,
         "is_active": True,
     },
+    # ── PIT 2026 Specialists ──────────────────────────────────────────────────
+    {
+        "name": "JA Bot — PIT 2026 Core",
+        "slug": "ja-pit-2026",
+        "role": "ja",
+        "description": "JA Bot chuyên PIT 2026 (Luật 109/2025) — biểu thuế 5 bậc, giảm trừ mới, ngưỡng HKD 1 tỷ",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — PIT Finalization",
+        "slug": "ja-pit-finalization",
+        "role": "ja",
+        "description": "JA Bot quyết toán TNCN — SOP eTax Mobile, điều kiện ủy quyền, deadline, tình huống phức tạp",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — PIT Freelancer & KOL",
+        "slug": "ja-pit-freelancer",
+        "role": "ja",
+        "description": "JA Bot thuế TNCN freelancer, KOL, content creator — decision tree, tỷ lệ thuế theo ngành",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — PIT Expat & Non-Resident",
+        "slug": "ja-pit-expat",
+        "role": "ja",
+        "description": "JA Bot PIT người nước ngoài — 183-day rule, gross-up, DTA credit, equity xuyên biên giới",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "Partner Bot — PIT 2026 Specialist",
+        "slug": "partner-pit-2026",
+        "role": "partner",
+        "description": "Partner Bot PIT 2026 — lập brief, review chiến lược với biểu thuế và giảm trừ mới nhất",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    # ── VAT Specialists ───────────────────────────────────────────────────────
+    {
+        "name": "JA Bot — VAT Input Deductibility",
+        "slug": "ja-vat-input",
+        "role": "ja",
+        "description": "JA Bot khấu trừ thuế GTGT đầu vào — điều kiện, HĐĐT, FCT, phân bổ doanh thu hỗn hợp",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — VAT Invoice & Supplier",
+        "slug": "ja-vat-invoice",
+        "role": "ja",
+        "description": "JA Bot hóa đơn GTGT — kiểm tra tính hợp lệ HĐĐT, supplier pattern library, hóa đơn ảo",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — VAT Export & Zero Rate",
+        "slug": "ja-vat-export",
+        "role": "ja",
+        "description": "JA Bot GTGT xuất khẩu — điều kiện 0%, hoàn thuế, dịch vụ xuyên biên giới",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    # ── Customs Specialists ───────────────────────────────────────────────────
+    {
+        "name": "JA Bot — Customs Import Duty",
+        "slug": "ja-customs-import",
+        "role": "ja",
+        "description": "JA Bot thuế nhập khẩu — HS Code, CIF, FTA thuế suất, GTGT NK, miễn giảm",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — Customs HS Classification",
+        "slug": "ja-customs-hs",
+        "role": "ja",
+        "description": "JA Bot phân loại HS Code — GRI rules, nhóm hàng phổ biến, advance ruling, rủi ro sai phân loại",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — Customs Origin & FTA",
+        "slug": "ja-customs-origin",
+        "role": "ja",
+        "description": "JA Bot xuất xứ hàng hóa — WO/CTC/RVC, C/O types, cộng gộp, gian lận xuất xứ",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "JA Bot — Customs Procedures",
+        "slug": "ja-customs-procedures",
+        "role": "ja",
+        "description": "JA Bot thủ tục hải quan — TNTX, gia công, SXXK, kho ngoại quan, EPZ, kiểm tra, phạt vi phạm",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "Partner Bot — Customs Specialist",
+        "slug": "partner-customs",
+        "role": "partner",
+        "description": "Partner Bot hải quan — tư vấn chiến lược, tối ưu FTA, AEO, kiểm toán hải quan",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
+    {
+        "name": "SA Bot — Customs Compliance",
+        "slug": "sa-customs",
+        "role": "sa",
+        "description": "SA Bot hải quan — review kỹ thuật compliance, PCA prep, tranh chấp trị giá",
+        "system_prompt_base": None,
+        "skill_ids": [],
+        "is_builtin": False,
+        "is_active": True,
+    },
 ]
 
 DEFAULT_PIPELINE_TEMPLATES = [
@@ -699,6 +862,184 @@ DEFAULT_PIPELINE_TEMPLATES = [
     },
 ]
 
+# ── NEW PIPELINES (PIT 2026 + VAT Advanced + Customs) ──────────────────────
+DEFAULT_PIPELINE_TEMPLATES_V2 = [
+    {
+        "name": "PIT 2026 Advisory",
+        "slug": "pit-2026-advisory",
+        "description": "Pipeline tư vấn TNCN 2026 — Luật 109/2025, biểu thuế 5 bậc, giảm trừ mới",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-pit-2026", "label": "Partner Brief (PIT 2026)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-pit-2026", "label": "JA Research (PIT 2026)"},
+            "5": {"bot_variant_slug": "sa-default", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-pit-2026", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-pit-2026", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "PIT Finalization (Quyết Toán)",
+        "slug": "pit-finalization",
+        "description": "Pipeline quyết toán thuế TNCN năm — cố vấn SOP eTax Mobile và mẫu biểu",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-pit-2026", "label": "Partner Brief (Quyết Toán)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-pit-finalization", "label": "JA Research (Finalization)"},
+            "5": {"bot_variant_slug": "sa-default", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-pit-2026", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-pit-2026", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "PIT Freelancer & KOL Advisory",
+        "slug": "pit-freelancer-advisory",
+        "description": "Pipeline tư vấn thuế TNCN freelancer, KOL, content creator",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-pit-2026", "label": "Partner Brief (Freelancer)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-pit-freelancer", "label": "JA Research (Freelancer/KOL)"},
+            "5": {"bot_variant_slug": "sa-default", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-pit-2026", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-pit-2026", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "PIT Expat & Non-Resident",
+        "slug": "pit-expat-nonresident",
+        "description": "Pipeline thuế TNCN người nước ngoài — 183-day rule, gross-up, DTA",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-pit", "label": "Partner Brief (PIT Expat)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-pit-expat", "label": "JA Research (Expat/Non-Resident)"},
+            "5": {"bot_variant_slug": "sa-default", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-pit", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-pit", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "VAT Input & Invoice Review",
+        "slug": "vat-input-invoice-review",
+        "description": "Pipeline kiểm tra khấu trừ GTGT đầu vào và hóa đơn điện tử",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-vat", "label": "Partner Brief (VAT)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-vat-input", "label": "JA Research (Input Deductibility)"},
+            "5": {"bot_variant_slug": "sa-vat", "label": "SA Review (VAT)"},
+            "6": {"bot_variant_slug": "partner-vat", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-vat", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "VAT Export Zero Rate",
+        "slug": "vat-export-zero-rate",
+        "description": "Pipeline tư vấn GTGT xuất khẩu 0% — điều kiện, bằng chứng, hoàn thuế",
+        "practice_area": "tax",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-vat", "label": "Partner Brief (VAT Export)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-vat-export", "label": "JA Research (Export 0%)"},
+            "5": {"bot_variant_slug": "sa-vat", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-vat", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-vat", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "Customs Import Advisory",
+        "slug": "customs-import-advisory",
+        "description": "Pipeline tư vấn nhập khẩu — thuế NK, HS Code, FTA, miễn giảm",
+        "practice_area": "customs",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-customs", "label": "Partner Brief (Customs)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-customs-import", "label": "JA Research (Import Duty)"},
+            "5": {"bot_variant_slug": "sa-customs", "label": "SA Review (Customs)"},
+            "6": {"bot_variant_slug": "partner-customs", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-customs", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "Customs HS Classification",
+        "slug": "customs-hs-classification",
+        "description": "Pipeline phân loại HS Code — GRI rules, advance ruling, chứng minh phân loại",
+        "practice_area": "customs",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-customs", "label": "Partner Brief (HS)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-customs-hs", "label": "JA Research (HS Classification)"},
+            "5": {"bot_variant_slug": "sa-customs", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-customs", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-customs", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "Customs Origin & FTA Optimization",
+        "slug": "customs-origin-fta",
+        "description": "Pipeline xuất xứ hàng hóa và tối ưu thuế FTA",
+        "practice_area": "customs",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-customs", "label": "Partner Brief (Origin/FTA)"},
+            "3": {"bot_variant_slug": "sa-default", "label": "SA Blueprint"},
+            "4": {"bot_variant_slug": "ja-customs-origin", "label": "JA Research (Origin/FTA)"},
+            "5": {"bot_variant_slug": "sa-customs", "label": "SA Review"},
+            "6": {"bot_variant_slug": "partner-customs", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-customs", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+    {
+        "name": "Customs Compliance Review",
+        "slug": "customs-compliance-review",
+        "description": "Pipeline kiểm toán tuân thủ hải quan — PCA prep, AEO, tranh chấp trị giá",
+        "practice_area": "customs",
+        "step_config": {
+            "1": {"bot_variant_slug": "intake-default", "label": "Intake"},
+            "2": {"bot_variant_slug": "partner-customs", "label": "Partner Brief (Compliance)"},
+            "3": {"bot_variant_slug": "sa-customs", "label": "SA Blueprint (Customs)"},
+            "4": {"bot_variant_slug": "ja-customs-procedures", "label": "JA Research (Procedures)"},
+            "5": {"bot_variant_slug": "sa-customs", "label": "SA Review (Compliance)"},
+            "6": {"bot_variant_slug": "partner-customs", "label": "Partner P2 Review"},
+            "7": {"bot_variant_slug": "partner-customs", "label": "Partner P3 Finalize"},
+        },
+        "is_default": False,
+        "is_active": True,
+    },
+]
+
+# Merge V2 pipelines into DEFAULT_PIPELINE_TEMPLATES
+DEFAULT_PIPELINE_TEMPLATES.extend(DEFAULT_PIPELINE_TEMPLATES_V2)
+
+
 # Maps bot slug → skill names to link after seeding
 BOT_SKILL_LINKS = {
     # ── Existing bots ───────────────────────────────────────────────────────────────
@@ -726,6 +1067,23 @@ BOT_SKILL_LINKS = {
     "partner-pit": ["vietnam-pit", "pit-advanced"],
     "partner-sst": ["vietnam-sst-advanced"],
     "partner-intl-tax": ["vietnam-intl-tax", "vietnam-dta"],
+    # ── PIT 2026 Specialists ─────────────────────────────────────────────────
+    "ja-pit-2026": ["pit-2026-core", "pit-bhxh-bhtn", "source-hierarchy"],
+    "ja-pit-finalization": ["pit-finalization", "pit-deadline-tracker", "source-hierarchy"],
+    "ja-pit-freelancer": ["pit-freelancer-kol", "pit-2026-core", "source-hierarchy"],
+    "ja-pit-expat": ["pit-expat-nonresident", "pit-advanced", "source-hierarchy"],
+    "partner-pit-2026": ["pit-2026-core", "pit-finalization", "pit-freelancer-kol", "pit-expat-nonresident"],
+    # ── VAT Specialists ──────────────────────────────────────────────────────
+    "ja-vat-input": ["vat-input-deductibility", "vat-invoice-validity", "vietnam-vat", "source-hierarchy"],
+    "ja-vat-invoice": ["vat-invoice-validity", "vietnam-invoices", "source-hierarchy"],
+    "ja-vat-export": ["vat-export-zero-rate", "vat-return-review", "source-hierarchy"],
+    # ── Customs Specialists ──────────────────────────────────────────────────
+    "ja-customs-import": ["vietnam-customs-core", "vietnam-import-duty", "vietnam-hs-classification", "source-hierarchy"],
+    "ja-customs-hs": ["vietnam-hs-classification", "vietnam-customs-core", "source-hierarchy"],
+    "ja-customs-origin": ["vietnam-origin-fta", "vietnam-customs-core", "source-hierarchy"],
+    "ja-customs-procedures": ["vietnam-customs-procedures", "vietnam-customs-compliance", "source-hierarchy"],
+    "partner-customs": ["vietnam-customs-core", "vietnam-import-duty", "vietnam-customs-advisory", "vietnam-origin-fta"],
+    "sa-customs": ["vietnam-customs-compliance", "vietnam-customs-valuation", "vietnam-customs-procedures"],
 }
 
 

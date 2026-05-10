@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "version": "2.0.0",
+    "version": "3.0.0",
     "description": "TaxLegal Vietnam Tax Seed Manifest — reference file for all seeded skills, bot variants, and pipeline templates",
     "last_updated": "2026-05-10",
     "note": "This file is for human reference only. Actual seeding is done via startup.py. Edit startup.py to change seed data."
@@ -61,7 +61,7 @@
         "name": "vietnam-invoices",
         "category": "tax",
         "description": "Hóa đơn điện tử — quy định, xử lý, hóa đơn rủi ro",
-        "applicable_bots": ["ja-vat", "ja-compliance"]
+        "applicable_bots": ["ja-vat", "ja-compliance", "ja-vat-invoice"]
       },
       {
         "file": "skills/vietnam-tax-admin.md",
@@ -131,14 +131,147 @@
         "name": "pit-advanced",
         "category": "tax",
         "description": "PIT nâng cao — expats, RSU/equity, benefits-in-kind, cá nhân kinh doanh, phân bổ xuyên biên giới",
-        "applicable_bots": ["ja-pit", "partner-pit"]
+        "applicable_bots": ["ja-pit", "partner-pit", "ja-pit-expat"]
       },
       {
         "file": "skills/source-hierarchy.md",
         "name": "source-hierarchy",
         "category": "process",
         "description": "Phân cấp nguồn pháp lý VN, DB-first retrieval order, chuẩn trích dẫn",
-        "applicable_bots": ["ja-default", "ja-advisory", "ja-compliance", "ja-pit", "ja-vat", "ja-cit", "ja-sst", "ja-intl-tax", "ja-fct", "ja-tp"]
+        "applicable_bots": ["ja-default", "ja-advisory", "ja-compliance", "ja-pit", "ja-vat", "ja-cit", "ja-sst", "ja-intl-tax", "ja-fct", "ja-tp", "ja-pit-2026", "ja-pit-finalization", "ja-pit-freelancer", "ja-pit-expat", "ja-vat-input", "ja-vat-invoice", "ja-vat-export", "ja-customs-import", "ja-customs-hs", "ja-customs-origin", "ja-customs-procedures"]
+      },
+      {
+        "file": "skills/pit-2026-core.md",
+        "name": "pit-2026-core",
+        "category": "tax",
+        "description": "PIT 2026 — Luật 109/2025/QH15, biểu thuế 5 bậc mới, giảm trừ 15.5tr/6.2tr, ngưỡng HKD 1 tỷ",
+        "applicable_bots": ["ja-pit-2026", "ja-pit-freelancer", "partner-pit-2026"]
+      },
+      {
+        "file": "skills/pit-finalization.md",
+        "name": "pit-finalization",
+        "category": "tax",
+        "description": "Quyết toán PIT — SOP 9 bước eTax Mobile, deadline, tình huống phức tạp",
+        "applicable_bots": ["ja-pit-finalization", "partner-pit-2026"]
+      },
+      {
+        "file": "skills/pit-freelancer-kol.md",
+        "name": "pit-freelancer-kol",
+        "category": "tax",
+        "description": "PIT cá nhân tự do & KOL — decision tree 5-tier, tỷ lệ thuế theo ngành, affiliate, re-characterization risk",
+        "applicable_bots": ["ja-pit-freelancer", "partner-pit-2026"]
+      },
+      {
+        "file": "skills/pit-expat-nonresident.md",
+        "name": "pit-expat-nonresident",
+        "category": "tax",
+        "description": "PIT expat & non-resident — 183-day rule, gross-up, DTA credit, equity xuyên biên giới",
+        "applicable_bots": ["ja-pit-expat", "partner-pit-2026"]
+      },
+      {
+        "file": "skills/pit-bhxh-bhtn.md",
+        "name": "pit-bhxh-bhtn",
+        "category": "tax",
+        "description": "BHXH 1 lần (Luật 41/2024), công thức, BHTN 2026, trần vùng",
+        "applicable_bots": ["ja-pit-2026"]
+      },
+      {
+        "file": "skills/pit-deadline-tracker.md",
+        "name": "pit-deadline-tracker",
+        "category": "process",
+        "description": "Lịch nộp thuế TNCN, penalty matrix, checklist cuối năm",
+        "applicable_bots": ["ja-pit-finalization"]
+      },
+      {
+        "file": "skills/vat-input-deductibility.md",
+        "name": "vat-input-deductibility",
+        "category": "tax",
+        "description": "Khấu trừ VAT đầu vào — 4 điều kiện, HĐĐT bắt buộc, FCT, phân bổ doanh thu hỗn hợp, red flags",
+        "applicable_bots": ["ja-vat-input"]
+      },
+      {
+        "file": "skills/vat-invoice-validity.md",
+        "name": "vat-invoice-validity",
+        "category": "tax",
+        "description": "Hiệu lực hóa đơn VAT — fields bắt buộc, tra cứu GDT, supplier pattern library, hóa đơn ảo",
+        "applicable_bots": ["ja-vat-input", "ja-vat-invoice"]
+      },
+      {
+        "file": "skills/vat-export-zero-rate.md",
+        "name": "vat-export-zero-rate",
+        "category": "tax",
+        "description": "VAT 0% xuất khẩu — 4 điều kiện DV xuất khẩu, checklist hàng hóa XK, hoàn thuế",
+        "applicable_bots": ["ja-vat-export"]
+      },
+      {
+        "file": "skills/vat-return-review.md",
+        "name": "vat-return-review",
+        "category": "process",
+        "description": "Rà soát tờ khai VAT — map dòng [26]-[42] Form 01/GTGT, 4 bước, working paper template",
+        "applicable_bots": ["ja-vat-export"]
+      },
+      {
+        "file": "skills/vat-exempt-classification.md",
+        "name": "vat-exempt-classification",
+        "category": "tax",
+        "description": "Phân loại hàng miễn VAT — Điều 5 (miễn), 5% (Điều 9), phân biệt dễ nhầm",
+        "applicable_bots": ["ja-vat-input", "ja-vat"]
+      },
+      {
+        "file": "skills/vietnam-customs-core.md",
+        "name": "vietnam-customs-core",
+        "category": "customs",
+        "description": "Hải quan cơ bản — VNACCS/VCIS, phân luồng X/V/Đ, tờ khai types, trị giá/HS/C/O",
+        "applicable_bots": ["ja-customs-import", "ja-customs-hs", "ja-customs-origin", "partner-customs"]
+      },
+      {
+        "file": "skills/vietnam-import-duty.md",
+        "name": "vietnam-import-duty",
+        "category": "customs",
+        "description": "Thuế nhập khẩu — 3 loại thuế suất, 10 FTA, công thức CIF→NK→GTGT NK→TTĐB, miễn giảm NK",
+        "applicable_bots": ["ja-customs-import", "partner-customs"]
+      },
+      {
+        "file": "skills/vietnam-hs-classification.md",
+        "name": "vietnam-hs-classification",
+        "category": "customs",
+        "description": "Phân loại HS — cấu trúc 8 số, 6 GRI rules, nhóm hàng phổ biến, advance ruling",
+        "applicable_bots": ["ja-customs-import", "ja-customs-hs"]
+      },
+      {
+        "file": "skills/vietnam-origin-fta.md",
+        "name": "vietnam-origin-fta",
+        "category": "customs",
+        "description": "Xuất xứ & FTA — WO/CTC/RVC, 12 loại C/O, cộng gộp, gian lận xuất xứ, checklist",
+        "applicable_bots": ["ja-customs-origin", "partner-customs"]
+      },
+      {
+        "file": "skills/vietnam-customs-procedures.md",
+        "name": "vietnam-customs-procedures",
+        "category": "customs",
+        "description": "Thủ tục hải quan — TNTX, gia công XK, SXXK, kho ngoại quan, EPZ, phạt vi phạm",
+        "applicable_bots": ["ja-customs-procedures", "sa-customs"]
+      },
+      {
+        "file": "skills/vietnam-customs-advisory.md",
+        "name": "vietnam-customs-advisory",
+        "category": "customs",
+        "description": "Tư vấn hải quan — ma trận FTA, Incoterms strategy, top 10 rủi ro, compliance roadmap",
+        "applicable_bots": ["partner-customs"]
+      },
+      {
+        "file": "skills/vietnam-customs-compliance.md",
+        "name": "vietnam-customs-compliance",
+        "category": "customs",
+        "description": "Tuân thủ hải quan — AEO, PCA, hàng có điều kiện, tranh chấp trị giá, STQ risk profiling",
+        "applicable_bots": ["ja-customs-procedures", "sa-customs"]
+      },
+      {
+        "file": "skills/vietnam-customs-valuation.md",
+        "name": "vietnam-customs-valuation",
+        "category": "customs",
+        "description": "Trị giá hải quan — 6 phương pháp WTO-CVA, khoản cộng/trừ, giao dịch liên kết, royalties",
+        "applicable_bots": ["sa-customs"]
       }
     ]
   },
@@ -154,14 +287,17 @@
       {"slug": "partner-tp", "name": "Partner Bot — Transfer Pricing", "skills": ["vietnam-transfer-pricing"]},
       {"slug": "partner-pit", "name": "Partner Bot — PIT Specialist", "skills": ["vietnam-pit", "pit-advanced"]},
       {"slug": "partner-sst", "name": "Partner Bot — SST/TTĐB Specialist", "skills": ["vietnam-sst-advanced"]},
-      {"slug": "partner-intl-tax", "name": "Partner Bot — International Tax", "skills": ["vietnam-intl-tax", "vietnam-dta"]}
+      {"slug": "partner-intl-tax", "name": "Partner Bot — International Tax", "skills": ["vietnam-intl-tax", "vietnam-dta"]},
+      {"slug": "partner-pit-2026", "name": "Partner Bot — PIT 2026 (Luật 109)", "skills": ["pit-2026-core", "pit-finalization", "pit-freelancer-kol", "pit-expat-nonresident"]},
+      {"slug": "partner-customs", "name": "Partner Bot — Customs & FTA", "skills": ["vietnam-customs-core", "vietnam-import-duty", "vietnam-customs-advisory", "vietnam-origin-fta"]}
     ],
     "sa": [
       {"slug": "sa-default", "name": "SA Bot (Default)", "skills": []},
       {"slug": "sa-compliance", "name": "SA Bot — Compliance Review", "skills": ["compliance-checklist", "tax-compliance"]},
       {"slug": "sa-advisory", "name": "SA Bot — Advisory Review", "skills": ["advisory-workflow", "advisory-memo"]},
       {"slug": "sa-cit", "name": "SA Bot — CIT Specialist", "skills": ["vietnam-cit", "tax-compliance"]},
-      {"slug": "sa-vat", "name": "SA Bot — VAT Specialist", "skills": ["vietnam-vat", "tax-compliance"]}
+      {"slug": "sa-vat", "name": "SA Bot — VAT Specialist", "skills": ["vietnam-vat", "tax-compliance"]},
+      {"slug": "sa-customs", "name": "SA Bot — Customs Compliance", "skills": ["vietnam-customs-compliance", "vietnam-customs-valuation", "vietnam-customs-procedures"]}
     ],
     "ja": [
       {"slug": "ja-default", "name": "JA Bot (Default)", "skills": []},
@@ -174,7 +310,18 @@
       {"slug": "ja-vat", "name": "JA Bot — VAT Specialist", "skills": ["vietnam-vat", "vietnam-invoices", "source-hierarchy"]},
       {"slug": "ja-cit", "name": "JA Bot — CIT Specialist", "skills": ["vietnam-cit", "source-hierarchy"]},
       {"slug": "ja-sst", "name": "JA Bot — SST/TTĐB Specialist", "skills": ["vietnam-sst-advanced", "source-hierarchy"]},
-      {"slug": "ja-intl-tax", "name": "JA Bot — International Tax", "skills": ["vietnam-intl-tax", "vietnam-dta", "source-hierarchy"]}
+      {"slug": "ja-intl-tax", "name": "JA Bot — International Tax", "skills": ["vietnam-intl-tax", "vietnam-dta", "source-hierarchy"]},
+      {"slug": "ja-pit-2026", "name": "JA Bot — PIT 2026 Core", "skills": ["pit-2026-core", "pit-bhxh-bhtn", "source-hierarchy"]},
+      {"slug": "ja-pit-finalization", "name": "JA Bot — PIT Quyết Toán", "skills": ["pit-finalization", "pit-deadline-tracker", "source-hierarchy"]},
+      {"slug": "ja-pit-freelancer", "name": "JA Bot — PIT Freelancer & KOL", "skills": ["pit-freelancer-kol", "pit-2026-core", "source-hierarchy"]},
+      {"slug": "ja-pit-expat", "name": "JA Bot — PIT Expat & Non-Resident", "skills": ["pit-expat-nonresident", "pit-advanced", "source-hierarchy"]},
+      {"slug": "ja-vat-input", "name": "JA Bot — VAT Input Deductibility", "skills": ["vat-input-deductibility", "vat-invoice-validity", "vietnam-vat", "source-hierarchy"]},
+      {"slug": "ja-vat-invoice", "name": "JA Bot — VAT Invoice Validity", "skills": ["vat-invoice-validity", "vietnam-invoices", "source-hierarchy"]},
+      {"slug": "ja-vat-export", "name": "JA Bot — VAT Export Zero-Rate", "skills": ["vat-export-zero-rate", "vat-return-review", "source-hierarchy"]},
+      {"slug": "ja-customs-import", "name": "JA Bot — Customs Import Advisory", "skills": ["vietnam-customs-core", "vietnam-import-duty", "vietnam-hs-classification", "source-hierarchy"]},
+      {"slug": "ja-customs-hs", "name": "JA Bot — HS Classification", "skills": ["vietnam-hs-classification", "vietnam-customs-core", "source-hierarchy"]},
+      {"slug": "ja-customs-origin", "name": "JA Bot — Origin & FTA C/O", "skills": ["vietnam-origin-fta", "vietnam-customs-core", "source-hierarchy"]},
+      {"slug": "ja-customs-procedures", "name": "JA Bot — Customs Procedures", "skills": ["vietnam-customs-procedures", "vietnam-customs-compliance", "source-hierarchy"]}
     ]
   },
   "pipeline_templates": {
@@ -201,7 +348,9 @@
     ],
     "vat": [
       {"slug": "vat-compliance-check", "name": "VAT Compliance Check", "bots_used": ["partner-vat", "ja-compliance"]},
-      {"slug": "vat-advisory-deep", "name": "VAT Advisory Deep", "bots_used": ["partner-vat", "ja-advisory"]}
+      {"slug": "vat-advisory-deep", "name": "VAT Advisory Deep", "bots_used": ["partner-vat", "ja-advisory"]},
+      {"slug": "vat-input-invoice-review", "name": "VAT Input & Invoice Review", "bots_used": ["partner-vat", "ja-vat-input", "ja-vat-invoice", "sa-compliance"]},
+      {"slug": "vat-export-zero-rate", "name": "VAT Export Zero-Rate Advisory", "bots_used": ["partner-vat", "ja-vat-export", "sa-advisory"]}
     ],
     "cit": [
       {"slug": "cit-compliance-check", "name": "CIT Compliance Check", "bots_used": ["partner-cit", "ja-compliance", "sa-compliance"]},
@@ -210,7 +359,11 @@
     "pit": [
       {"slug": "pit-compliance-check", "name": "PIT Compliance Check", "bots_used": ["partner-default", "ja-compliance", "sa-compliance"]},
       {"slug": "pit-advisory-deep", "name": "PIT Advisory Deep", "bots_used": ["partner-default", "ja-advisory"]},
-      {"slug": "pit-advisory-expat", "name": "PIT Advisory — Expat & Equity", "bots_used": ["partner-pit", "ja-pit", "sa-advisory"]}
+      {"slug": "pit-advisory-expat", "name": "PIT Advisory — Expat & Equity", "bots_used": ["partner-pit", "ja-pit", "sa-advisory"]},
+      {"slug": "pit-2026-advisory", "name": "PIT 2026 Advisory (Luật 109)", "bots_used": ["partner-pit-2026", "ja-pit-2026", "sa-advisory"]},
+      {"slug": "pit-finalization", "name": "PIT Quyết Toán Workflow", "bots_used": ["partner-pit-2026", "ja-pit-finalization", "sa-compliance"]},
+      {"slug": "pit-freelancer-advisory", "name": "PIT Freelancer & KOL Advisory", "bots_used": ["partner-pit-2026", "ja-pit-freelancer", "sa-advisory"]},
+      {"slug": "pit-expat-nonresident", "name": "PIT Expat & Non-Resident", "bots_used": ["partner-pit-2026", "ja-pit-expat", "sa-advisory"]}
     ],
     "fct": [
       {"slug": "fct-advisory", "name": "FCT Advisory", "bots_used": ["partner-fct", "ja-fct"]}
@@ -225,19 +378,42 @@
     "international_tax": [
       {"slug": "intl-tax-advisory", "name": "International Tax Advisory", "bots_used": ["partner-intl-tax", "ja-intl-tax", "sa-advisory"]},
       {"slug": "dta-analysis", "name": "DTA Analysis", "bots_used": ["partner-intl-tax", "ja-intl-tax", "sa-advisory"]}
+    ],
+    "customs": [
+      {"slug": "customs-import-advisory", "name": "Customs Import Advisory", "bots_used": ["partner-customs", "ja-customs-import", "sa-customs"]},
+      {"slug": "customs-hs-classification", "name": "HS Classification Review", "bots_used": ["partner-customs", "ja-customs-hs", "sa-customs"]},
+      {"slug": "customs-origin-fta", "name": "Origin & FTA C/O Advisory", "bots_used": ["partner-customs", "ja-customs-origin", "sa-customs"]},
+      {"slug": "customs-compliance-review", "name": "Customs Compliance Review", "bots_used": ["partner-customs", "ja-customs-procedures", "sa-customs"]}
     ]
   },
   "coverage_matrix": {
-    "description": "Tax type × Work type coverage (✓ = pipeline exists, - = not needed)",
+    "description": "Tax/Customs area × Work type coverage (✓ = pipeline exists, - = not needed)",
     "matrix": {
-      "VAT":    {"compliance": "vat-compliance-check", "advisory": "vat-advisory-deep"},
-      "CIT":    {"compliance": "cit-compliance-check", "advisory": "cit-advisory-deep"},
-      "PIT":    {"compliance": "pit-compliance-check", "advisory": "pit-advisory-deep / pit-advisory-expat"},
-      "FCT":    {"compliance": "-", "advisory": "fct-advisory"},
-      "TP":     {"compliance": "-", "advisory": "transfer-pricing-review"},
-      "SST":    {"compliance": "sst-compliance-check", "advisory": "sst-advisory"},
-      "IntlTax":{"compliance": "-", "advisory": "intl-tax-advisory / dta-analysis"},
-      "Generic":{"compliance": "compliance-review-standard", "advisory": "advisory-memo-standard"}
+      "VAT":           {"compliance": "vat-compliance-check", "advisory": "vat-advisory-deep / vat-input-invoice-review / vat-export-zero-rate"},
+      "CIT":           {"compliance": "cit-compliance-check", "advisory": "cit-advisory-deep"},
+      "PIT":           {"compliance": "pit-compliance-check / pit-finalization", "advisory": "pit-advisory-deep / pit-advisory-expat / pit-2026-advisory / pit-freelancer-advisory / pit-expat-nonresident"},
+      "FCT":           {"compliance": "-", "advisory": "fct-advisory"},
+      "TP":            {"compliance": "-", "advisory": "transfer-pricing-review"},
+      "SST":           {"compliance": "sst-compliance-check", "advisory": "sst-advisory"},
+      "IntlTax":       {"compliance": "-", "advisory": "intl-tax-advisory / dta-analysis"},
+      "Customs":       {"compliance": "customs-compliance-review", "advisory": "customs-import-advisory / customs-hs-classification / customs-origin-fta"},
+      "Generic":       {"compliance": "compliance-review-standard", "advisory": "advisory-memo-standard"}
     }
+  },
+  "document_to_skill": {
+    "description": "Document-to-skill feature: upload PDF/PPTX/DOCX → LLM draft → review → save as mutable skill",
+    "api_endpoints": [
+      "POST /api/skills/from-upload      — multipart upload, returns draft record",
+      "POST /api/skills/from-document    — fetch from URL, returns draft record",
+      "GET  /api/skills/drafts           — list user's drafts",
+      "GET  /api/skills/draft/{id}       — get draft with full content",
+      "PATCH /api/skills/draft/{id}      — edit draft before saving",
+      "POST /api/skills/draft/{id}/save  — promote draft to skill",
+      "DELETE /api/skills/draft/{id}     — discard draft",
+      "GET  /api/skills/{id}/source-lineage — provenance info"
+    ],
+    "db_table": "taxlegal.skill_drafts",
+    "migration_file": "backend/migrations/002_skill_drafts.sql",
+    "service_file": "backend/services/skill_drafter.py"
   }
 }

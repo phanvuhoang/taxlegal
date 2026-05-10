@@ -18,6 +18,7 @@ from backend.routes.cases import router as cases_router
 from backend.routes.workflows_v4 import router as workflows_v4_router
 from backend.routes.bots_v4 import router as bots_v4_router
 from backend.routes.skills_v4 import router as skills_v4_router
+from backend.routes.skill_drafts import router as skill_drafts_router
 from backend.routes.health import router as health_router
 from backend.config import APP_PORT
 
@@ -74,6 +75,8 @@ app.include_router(skills_router)
 app.include_router(cases_router)
 app.include_router(workflows_v4_router)
 app.include_router(bots_v4_router)
+# skill_drafts MUST come before skills_v4 to avoid "draft" being treated as int
+app.include_router(skill_drafts_router)
 app.include_router(skills_v4_router)
 app.include_router(health_router)
 
