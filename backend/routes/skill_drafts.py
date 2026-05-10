@@ -3,19 +3,17 @@ Document-to-Skill Draft API
 
 POST /api/skills/from-document   — draft from URL of already-uploaded file
 POST /api/skills/from-upload     — multipart upload PDF/PPTX/DOCX
-GET  /api/skills/draft/{id}      — get draft
-PATCH /api/skills/draft/{id}     — update draft (edit content before saving)
-POST /api/skills/draft/{id}/save — save draft as a new skill
-DELETE /api/skills/draft/{id}    — discard draft
-GET  /api/skills/{id}/source-lineage — provenance / source info for a skill
+GET  /api/skills/drafts          — list user's drafts
+GET  /api/skills/draft/{id}      — get draft (full content)
+PATCH /api/skills/draft/{id}     — update draft before saving
+POST /api/skills/draft/{id}/save — promote draft to skill
+DELETE /api/skills/draft/{id}    — discard draft (soft delete)
+GET  /api/skills/{id}/source-lineage — provenance for a skill
 
-NOTE: All /api/skills/draft/* and /api/skills/from-* routes MUST be registered
-BEFORE the generic /api/skills/{skill_id} routes in the router mount order
-to avoid FastAPI treating "draft" / "from-document" / "from-upload" as integers.
-Register this router BEFORE skills_v4_router in main.py.
+NOTE: Register this router BEFORE skills_v4_router in main.py so FastAPI
+      does not try to parse "draft" / "drafts" / "from-upload" as integer IDs.
 """
 
-import io
 import logging
 from datetime import datetime
 from typing import Optional
@@ -29,23 +27,14 @@ from backend.database import get_db
 from backend.auth import get_current_user
 from backend.models import User
 from backend.services.skill_drafter import (
-    extract_text_from_pdf,
-    extract_text_from_docx,
-    extract_text_from_pptx,
+    extract_text,
     detect_topic,
-    generate_skill_draft,
+    create_draft_from_document,
 )
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["skill_drafts"])
 
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "application/msword",
-    "application/vnd.ms-powerpoint",
-}
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".pptx", ".ppt"}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 
@@ -53,7 +42,7 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 # ── Pydantic schemas ────────────────────────────────────────────────────────
 
 class DraftFromDocumentRequest(BaseModel):
-    """Draft skill from a URL pointing to an already-uploaded file."""
+    """Draft a skill from a URL pointing to an already-uploaded file."""
     file_url: str
     filename: str
     topic_hint: Optional[str] = None
@@ -69,8 +58,8 @@ class DraftPatch(BaseModel):
 
 class DraftSaveRequest(BaseModel):
     """Finalize a draft as a new skill."""
-    slug: Optional[str] = None          # override suggested_slug
-    name: Optional[str] = None          # override auto-name
+    slug: Optional[str] = None
+    name: Optional[str] = None
     category: Optional[str] = "tax"
     tags: Optional[list[str]] = None
     applicable_bots: Optional[list[str]] = None
@@ -81,17 +70,6 @@ class DraftSaveRequest(BaseModel):
 def _ext(filename: str) -> str:
     from pathlib import Path
     return Path(filename).suffix.lower()
-
-
-def _extract(data: bytes, filename: str) -> str:
-    ext = _ext(filename)
-    if ext == ".pdf":
-        return extract_text_from_pdf(data)
-    if ext in (".docx", ".doc"):
-        return extract_text_from_docx(data)
-    if ext in (".pptx", ".ppt"):
-        return extract_text_from_pptx(data)
-    raise ValueError(f"Unsupported file type: {ext}")
 
 
 def _serialize_draft(row: dict) -> dict:
@@ -114,24 +92,14 @@ async def _get_draft_or_404(db: AsyncSession, draft_id: int, user_id: int) -> di
         raise HTTPException(status_code=404, detail="Draft not found")
     if not row:
         raise HTTPException(status_code=404, detail="Draft not found")
-    # Allow access to own drafts OR if admin (created_by == None means seeded)
     if row["created_by"] is not None and row["created_by"] != user_id:
         raise HTTPException(status_code=403, detail="Access denied")
     return dict(row)
 
 
-async def _insert_draft(
-    db: AsyncSession,
-    *,
-    filename: str,
-    original_size_bytes: int,
-    extracted_text: str,
-    topic_slug: str,
-    topic_label: str,
-    draft_content: str,
-    suggested_slug: str,
-    created_by: int,
-) -> dict:
+async def _insert_draft(db: AsyncSession, *, filename: str, original_size_bytes: int,
+                        extracted_text: str, topic_slug: str, topic_label: str,
+                        draft_content: str, suggested_slug: str, created_by: int) -> dict:
     now = datetime.utcnow()
     try:
         result = await db.execute(
@@ -166,55 +134,72 @@ async def _insert_draft(
         raise HTTPException(status_code=500, detail=f"Failed to create draft: {e}")
 
 
+async def _process_document(data: bytes, filename: str, topic_hint: Optional[str]) -> dict:
+    """
+    Extract text, detect topic, and generate draft via skill_drafter.create_draft_from_document.
+    Returns the result dict from create_draft_from_document.
+    """
+    # create_draft_from_document handles extraction + topic detection + LLM draft
+    result = await create_draft_from_document(
+        filename=filename,
+        data=data,
+        ai_provider=None,   # not used — generate_draft_skill calls call_ai() directly
+        use_llm=True,
+    )
+
+    if result.get("error"):
+        raise HTTPException(status_code=422, detail=result["error"])
+    if not result.get("extracted_text", "").strip():
+        raise HTTPException(status_code=422, detail="No text could be extracted from the document")
+
+    # Apply topic_hint override if provided
+    if topic_hint:
+        from backend.services.skill_drafter import TOPIC_PATTERNS
+        hint_lower = topic_hint.lower()
+        for _pattern, slug, label in TOPIC_PATTERNS:
+            if hint_lower in slug or hint_lower in label.lower():
+                result["topic_slug"] = slug
+                result["topic_label"] = label
+                break
+
+    return result
+
+
 # ── Routes ───────────────────────────────────────────────────────────────────
 
 @router.post("/api/skills/from-upload", status_code=201)
 async def draft_skill_from_upload(
     file: UploadFile = File(...),
-    topic_hint: Optional[str] = Query(None, description="Optional topic hint (e.g. 'pit', 'vat', 'customs')"),
+    topic_hint: Optional[str] = Query(None, description="Optional topic hint: pit, vat, customs, cit, fct"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Upload a PDF, DOCX, or PPTX and generate a draft skill from its content.
-    Returns a skill_draft record with draft_content (editable) and suggested_slug.
+    Returns a skill_draft record with editable draft_content and suggested_slug.
     """
-    filename = file.filename or "upload"
+    filename = file.filename or "upload.pdf"
     if _ext(filename) not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type '{_ext(filename)}'. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
+            detail=f"Unsupported file type '{_ext(filename)}'. Allowed: pdf, docx, pptx",
         )
 
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
 
-    try:
-        extracted_text = _extract(data, filename)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Text extraction failed: {e}")
-
-    if not extracted_text or not extracted_text.strip():
-        raise HTTPException(status_code=422, detail="No text could be extracted from the document")
-
-    topic_slug, topic_label = detect_topic(filename, extracted_text, hint=topic_hint)
-    draft_content, suggested_slug = await generate_skill_draft(
-        extracted_text=extracted_text,
-        filename=filename,
-        topic_slug=topic_slug,
-        topic_label=topic_label,
-    )
+    result = await _process_document(data, filename, topic_hint)
 
     row = await _insert_draft(
         db,
         filename=filename,
         original_size_bytes=len(data),
-        extracted_text=extracted_text[:50000],  # store first 50k chars
-        topic_slug=topic_slug,
-        topic_label=topic_label,
-        draft_content=draft_content,
-        suggested_slug=suggested_slug,
+        extracted_text=result["extracted_text"][:50000],
+        topic_slug=result["topic_slug"],
+        topic_label=result["topic_label"],
+        draft_content=result["draft_content"],
+        suggested_slug=result["suggested_slug"],
         created_by=current_user.id,
     )
     return _serialize_draft(row)
@@ -227,17 +212,14 @@ async def draft_skill_from_document_url(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Draft a skill from a file URL (e.g. already uploaded to object storage).
+    Draft a skill from a file URL (already uploaded to object storage or any public URL).
     Fetches the URL, extracts text, and generates draft skill content.
     """
     import httpx
 
     filename = req.filename
     if _ext(filename) not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type for '{filename}'",
-        )
+        raise HTTPException(status_code=400, detail=f"Unsupported file type for '{filename}'")
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
@@ -250,31 +232,17 @@ async def draft_skill_from_document_url(
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
 
-    try:
-        extracted_text = _extract(data, filename)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=f"Text extraction failed: {e}")
-
-    if not extracted_text or not extracted_text.strip():
-        raise HTTPException(status_code=422, detail="No text could be extracted from the document")
-
-    topic_slug, topic_label = detect_topic(filename, extracted_text, hint=req.topic_hint)
-    draft_content, suggested_slug = await generate_skill_draft(
-        extracted_text=extracted_text,
-        filename=filename,
-        topic_slug=topic_slug,
-        topic_label=topic_label,
-    )
+    result = await _process_document(data, filename, req.topic_hint)
 
     row = await _insert_draft(
         db,
         filename=filename,
         original_size_bytes=len(data),
-        extracted_text=extracted_text[:50000],
-        topic_slug=topic_slug,
-        topic_label=topic_label,
-        draft_content=draft_content,
-        suggested_slug=suggested_slug,
+        extracted_text=result["extracted_text"][:50000],
+        topic_slug=result["topic_slug"],
+        topic_label=result["topic_label"],
+        draft_content=result["draft_content"],
+        suggested_slug=result["suggested_slug"],
         created_by=current_user.id,
     )
     return _serialize_draft(row)
@@ -295,7 +263,6 @@ async def list_drafts(
         if status:
             where_extra = " AND status = :status"
             params["status"] = status
-
         result = await db.execute(
             text(f"""
                 SELECT id, filename, original_size_bytes, topic_slug, topic_label,
@@ -311,7 +278,6 @@ async def list_drafts(
     except Exception as e:
         logger.warning(f"skill_drafts list error: {e}")
         return []
-
     return [_serialize_draft(dict(r)) for r in rows]
 
 
@@ -341,14 +307,14 @@ async def update_draft(
         raise HTTPException(status_code=400, detail="No fields to update")
 
     now = datetime.utcnow()
+    set_parts = [f"{k} = :{k}" for k in updates]
+    set_parts.append("updated_at = :now")
     updates["now"] = now
     updates["draft_id"] = draft_id
-    set_clauses = ", ".join([f"{k} = :{k}" for k in req.model_dump(exclude_unset=True)])
-    set_clauses += ", updated_at = :now"
 
     try:
         await db.execute(
-            text(f"UPDATE taxlegal.skill_drafts SET {set_clauses} WHERE id = :draft_id"),
+            text(f"UPDATE taxlegal.skill_drafts SET {', '.join(set_parts)} WHERE id = :draft_id"),
             updates,
         )
         await db.commit()
@@ -394,12 +360,12 @@ async def save_draft_as_skill(
         if existing.one_or_none():
             raise HTTPException(
                 status_code=409,
-                detail=f"A skill with slug '{slug}' already exists. Set a different slug.",
+                detail=f"A skill with slug '{slug}' already exists. Provide a different slug.",
             )
     except HTTPException:
         raise
-    except Exception as e:
-        logger.warning(f"slug check error: {e}")
+    except Exception:
+        pass
 
     # Insert skill
     try:
@@ -426,8 +392,7 @@ async def save_draft_as_skill(
                 "now": now,
             },
         )
-        skill_row = result.one()
-        skill_id = skill_row[0]
+        skill_id = result.one()[0]
     except HTTPException:
         raise
     except Exception as e:
@@ -486,30 +451,24 @@ async def get_skill_source_lineage(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Return provenance information for a skill — which draft (if any) it came from,
-    and basic metadata about the source document.
-    """
-    # Verify skill exists
+    """Return provenance information for a skill — originating draft + source document metadata."""
     try:
         skill_result = await db.execute(
             text("SELECT id, name, slug, version, created_at FROM taxlegal.skills WHERE id = :id"),
             {"id": skill_id},
         )
         skill_row = skill_result.mappings().one_or_none()
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=404, detail="Skill not found")
 
     if not skill_row:
         raise HTTPException(status_code=404, detail="Skill not found")
 
-    # Look for originating draft
     draft_info = None
     try:
         draft_result = await db.execute(
             text("""
-                SELECT id, filename, original_size_bytes, topic_slug, topic_label,
-                       created_at, created_by
+                SELECT id, filename, original_size_bytes, topic_slug, topic_label, created_at
                 FROM taxlegal.skill_drafts
                 WHERE saved_skill_id = :skill_id
                 LIMIT 1

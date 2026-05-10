@@ -168,13 +168,16 @@ async def generate_draft_skill(
     extracted_text: str,
     topic_slug: str,
     topic_label: str,
-    ai_provider,
+    ai_provider=None,  # kept for backward compat but ignored
     max_tokens: int = 4096,
 ) -> str:
     """
     Call the LLM to generate a draft skill from extracted document text.
     Returns raw markdown string (frontmatter + body).
+    Uses call_ai() from backend.ai_provider directly.
     """
+    from backend.ai_provider import call_ai
+
     # Truncate text if too long (keep first 8000 chars to fit context)
     if len(extracted_text) > 8000:
         truncated = extracted_text[:8000]
@@ -199,19 +202,15 @@ Generate the skill file now. Start with the YAML frontmatter (---) immediately.
 Suggested skill name: {topic_slug}-from-document
 """
 
-    messages = [
-        {"role": "system", "content": DRAFT_SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
-
     try:
-        response = await ai_provider.chat_completion(
-            messages=messages,
-            model=None,  # use default
+        response = await call_ai(
+            model_id="deepseek-chat",
+            messages=[{"role": "user", "content": user_prompt}],
+            system_prompt=DRAFT_SYSTEM_PROMPT,
             max_tokens=max_tokens,
             temperature=0.3,
         )
-        return response.get("content", response.get("text", ""))
+        return response.get("content", "")
     except Exception as e:
         logger.error(f"LLM skill draft failed: {e}")
         # Return a minimal template with extracted text as fallback
