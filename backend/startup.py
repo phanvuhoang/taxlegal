@@ -67,6 +67,23 @@ async def run_init_sql():
                 logger.warning(f"SQL stmt warning (may be OK if already exists): {e}")
     logger.info("Schema initialization complete.")
 
+    # Explicit column migrations — ensure v4 columns exist on existing DBs
+    _col_migrations = [
+        "ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS version_number INTEGER DEFAULT 1",
+        "ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS parent_skill_id INTEGER REFERENCES taxlegal.skills(id)",
+        "ALTER TABLE taxlegal.skills ADD COLUMN IF NOT EXISTS created_by INTEGER REFERENCES taxlegal.users(id)",
+        "ALTER TABLE taxlegal.bot_variants ADD COLUMN IF NOT EXISTS model_override VARCHAR(100)",
+        "ALTER TABLE taxlegal.bot_variants ADD COLUMN IF NOT EXISTS provider_override VARCHAR(50)",
+        "ALTER TABLE taxlegal.pipeline_templates ADD COLUMN IF NOT EXISTS is_default BOOLEAN DEFAULT FALSE",
+    ]
+    async with engine.begin() as conn:
+        for migration in _col_migrations:
+            try:
+                await conn.execute(text(migration))
+            except Exception as e:
+                logger.warning(f"Column migration warning (may already exist): {e}")
+    logger.info("Column migrations applied.")
+
 
 async def seed_admin():
     """Create admin user if not exists."""
@@ -748,7 +765,7 @@ async def seed_skills_and_bots():
                     description = frontmatter.get("description", "")
                     category = frontmatter.get("category", "tax")
                     tags = frontmatter.get("tags") or []
-                    applicable_bots = frontmatter.get("bots") or []
+                    applicable_bots = frontmatter.get("applicable_bots") or frontmatter.get("bots") or []
 
                     await db.execute(text("""
                         INSERT INTO taxlegal.skills
@@ -792,7 +809,7 @@ async def seed_skills_and_bots():
                     (name, slug, role, description, system_prompt_base, skill_ids,
                      is_builtin, is_active)
                 VALUES
-                    (:name, :slug, :role, :description, :system_prompt_base, :skill_ids,
+                    (:name, :slug, :role, :description, :system_prompt_base, CAST(:skill_ids AS INTEGER[]),
                      :is_builtin, :is_active)
                 ON CONFLICT (slug) DO UPDATE SET
                     name = EXCLUDED.name,
@@ -806,7 +823,7 @@ async def seed_skills_and_bots():
                 "role": bv["role"],
                 "description": bv["description"],
                 "system_prompt_base": bv.get("system_prompt_base"),
-                "skill_ids": bv.get("skill_ids", []),
+                "skill_ids": json.dumps(bv.get("skill_ids", [])),
                 "is_builtin": bv.get("is_builtin", False),
                 "is_active": bv.get("is_active", True),
             })
