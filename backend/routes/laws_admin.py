@@ -352,32 +352,45 @@ Chỉ trả về JSON thuần túy."""
 
 
 # ── dbvntax Import ────────────────────────────────────────────────────────────
+# dbvntax schema (confirmed): table=documents, columns:
+#   id, so_hieu, ten, loai, co_quan, ngay_ban_hanh, hieu_luc_tu, het_hieu_luc_tu,
+#   tinh_trang, noi_dung (HTML full text), link_tvpl, sac_thue TEXT[],
+#   importance SMALLINT, is_anchor BOOLEAN
+# Legal doc types: Luật, Nghị định, Thông tư, Thông tư liên tịch,
+#                  Văn bản hợp nhất, Pháp lệnh, Nghị quyết (NOT: Công văn, Thông báo)
+_DBVNTAX_LEGAL_TYPES = [
+    'Luật', 'Nghị định', 'Thông tư', 'Thông tư liên tịch',
+    'Văn bản hợp nhất', 'Pháp lệnh', 'Nghị quyết', 'Quyết định'
+]
+
+
+async def _dbvntax_connect():
+    """Return an asyncpg connection to dbvntax. Caller must close."""
+    if not DBVNTAX_URL:
+        raise HTTPException(status_code=503, detail="DBVNTAX_DATABASE_URL not configured")
+    import asyncpg
+    db_url = DBVNTAX_URL.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql+psycopg2://", "postgresql://")
+    return await asyncpg.connect(db_url)
+
 
 @router.get("/api/admin/dbvntax/list")
 async def list_dbvntax_documents(
     doc_type: Optional[str] = None,
+    sac_thue: Optional[str] = None,
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
     _admin: User = Depends(require_admin),
 ):
     """
-    List tax law documents from dbvntax (postgres /postgres DB).
-    Only shows Luật, Nghị định, Thông tư, Văn bản Hợp nhất (not Công văn).
+    List tax law documents from dbvntax — only legal docs (not Công văn/Thông báo).
+    Supports filtering by doc_type, sac_thue (tax type), and text search.
     """
-    if not DBVNTAX_URL:
-        raise HTTPException(status_code=503, detail="DBVNTAX_DATABASE_URL not configured")
-
+    conn = await _dbvntax_connect()
     try:
-        import asyncpg
-        # Convert asyncpg URL
-        db_url = DBVNTAX_URL.replace("postgresql+asyncpg://", "postgresql://")
-        conn = await asyncpg.connect(db_url)
-
         try:
-            # Try to query common table names in dbvntax
-            # The actual table name may vary — try several
-            tables_to_try = ["van_ban", "vanbans", "documents", "tax_documents", "laws"]
+            # Confirmed: dbvntax uses 'documents' table
+            tables_to_try = ["documents", "van_ban", "vanbans", "tax_documents", "laws"]
             table_name = None
             for tbl in tables_to_try:
                 try:
@@ -388,7 +401,6 @@ async def list_dbvntax_documents(
                     continue
 
             if not table_name:
-                # Introspect what tables exist
                 rows = await conn.fetch("""
                     SELECT table_name FROM information_schema.tables
                     WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
@@ -396,47 +408,112 @@ async def list_dbvntax_documents(
                 """)
                 return {"error": "Could not find document table", "available_tables": [r["table_name"] for r in rows]}
 
-            # Query documents
-            conditions = ["1=1"]
-            params = []
+            # Build WHERE clause — exclude Công văn, Thông báo
+            conditions = []
+            params: list = []
 
-            # Filter to only legal doc types (not công văn)
-            legal_types = ['Luật', 'Nghị định', 'Thông tư', 'Văn bản hợp nhất', 'Pháp lệnh']
-            type_placeholders = ", ".join([f"${i+1}" for i in range(len(legal_types))])
-            conditions.append(f"(loai IS NULL OR loai = ANY(ARRAY[{type_placeholders}]))")
-            params.extend(legal_types)
+            # Legal types filter (escaped as literals — asyncpg positional params)
+            types_literal = ", ".join(f"'{t}'" for t in _DBVNTAX_LEGAL_TYPES)
+            conditions.append(f"loai = ANY(ARRAY[{types_literal}]::text[])")
 
             if doc_type:
                 params.append(f"%{doc_type}%")
                 conditions.append(f"loai ILIKE ${len(params)}")
 
+            if sac_thue:
+                # sac_thue is a TEXT[] column in dbvntax
+                sac_thue_esc = sac_thue.replace("'", "''")
+                conditions.append(f"sac_thue && ARRAY['{sac_thue_esc}']::text[]")
+
             if search:
                 params.append(f"%{search}%")
                 conditions.append(f"(ten ILIKE ${len(params)} OR so_hieu ILIKE ${len(params)})")
 
+            where = " AND ".join(conditions) if conditions else "1=1"
             params.extend([limit, skip])
-            where = " AND ".join(conditions)
             query = f"""
-                SELECT id, ten as title, so_hieu as doc_number,
-                       loai as doc_type, co_quan_ban_hanh as issuer,
-                       ngay_ban_hanh as issued_date
+                SELECT
+                    id,
+                    so_hieu,
+                    ten,
+                    loai,
+                    co_quan,
+                    ngay_ban_hanh::text AS ngay_ban_hanh,
+                    hieu_luc_tu::text AS hieu_luc_tu,
+                    tinh_trang,
+                    sac_thue,
+                    importance,
+                    is_anchor,
+                    link_tvpl
                 FROM {table_name}
                 WHERE {where}
-                ORDER BY ngay_ban_hanh DESC NULLS LAST
+                ORDER BY importance ASC NULLS LAST, ngay_ban_hanh DESC NULLS LAST
                 LIMIT ${len(params)-1} OFFSET ${len(params)}
             """
             rows = await conn.fetch(query, *params)
-            return {
-                "table_used": table_name,
-                "items": [dict(r) for r in rows],
-                "total": len(rows)
-            }
+
+            # Count total (without limit/offset)
+            count_params = params[:-2]
+            cnt = await conn.fetchrow(
+                f"SELECT COUNT(*) FROM {table_name} WHERE {where}",
+                *count_params
+            )
+            total = cnt[0] if cnt else len(rows)
+
+            items = []
+            for r in rows:
+                d = dict(r)
+                # sac_thue may be asyncpg List type
+                if isinstance(d.get("sac_thue"), (list, tuple)):
+                    d["sac_thue"] = list(d["sac_thue"])
+                items.append(d)
+
+            return {"items": items, "total": total}
         finally:
             await conn.close()
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"dbvntax query failed: {e}")
+        logger.error(f"dbvntax list query failed: {e}")
         raise HTTPException(status_code=500, detail=f"dbvntax connection failed: {str(e)}")
+
+
+@router.get("/api/admin/dbvntax/preview/{doc_id}")
+async def preview_dbvntax_document(
+    doc_id: int,
+    _admin: User = Depends(require_admin),
+):
+    """
+    Return full HTML content of a dbvntax document for preview.
+    Used by the 'Import from dbvntax' tab when admin clicks on a row.
+    """
+    conn = await _dbvntax_connect()
+    try:
+        row = await conn.fetchrow(
+            "SELECT id, so_hieu, ten, loai, co_quan, "
+            "ngay_ban_hanh::text, noi_dung, link_tvpl, sac_thue "
+            "FROM documents WHERE id = $1",
+            doc_id,
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Document not found in dbvntax")
+        d = dict(row)
+        if isinstance(d.get("sac_thue"), (list, tuple)):
+            d["sac_thue"] = list(d["sac_thue"])
+        return {
+            "id": d["id"],
+            "so_hieu": d["so_hieu"],
+            "ten": d["ten"],
+            "loai": d["loai"],
+            "co_quan": d["co_quan"],
+            "ngay_ban_hanh": d["ngay_ban_hanh"],
+            "sac_thue": d["sac_thue"] or [],
+            "link_tvpl": d["link_tvpl"],
+            "noi_dung_html": d["noi_dung"] or "",
+        }
+    finally:
+        await conn.close()
 
 
 @router.post("/api/admin/dbvntax/import")
@@ -447,96 +524,93 @@ async def import_from_dbvntax(
 ):
     """
     Import selected documents from dbvntax into taxlegal.law_documents_v2.
+    Copies sac_thue → tax_types, is_anchor → is_priority.
     body: {"ids": [1, 2, 3], "is_priority": false}
     """
-    if not DBVNTAX_URL:
-        raise HTTPException(status_code=503, detail="DBVNTAX_DATABASE_URL not configured")
-
     ids = body.get("ids", [])
     is_priority = body.get("is_priority", False)
-
     if not ids:
         raise HTTPException(status_code=400, detail="No IDs provided")
 
+    conn = await _dbvntax_connect()
     try:
-        import asyncpg
-        db_url = DBVNTAX_URL.replace("postgresql+asyncpg://", "postgresql://")
-        conn = await asyncpg.connect(db_url)
-
-        try:
-            # Try common table structures
-            tables_to_try = ["van_ban", "vanbans", "documents", "tax_documents", "laws"]
-            table_name = None
-            for tbl in tables_to_try:
-                try:
-                    await conn.fetchrow(f"SELECT 1 FROM {tbl} LIMIT 1")
-                    table_name = tbl
-                    break
-                except Exception:
-                    continue
-
-            if not table_name:
-                raise HTTPException(status_code=500, detail="Cannot find document table in dbvntax")
-
-            id_placeholders = ", ".join([f"${i+1}" for i in range(len(ids))])
-            rows = await conn.fetch(
-                f"""SELECT id, ten as title, so_hieu as doc_number,
-                           loai as doc_type, co_quan_ban_hanh as issuer,
-                           ngay_ban_hanh as issued_date, noi_dung as content_html
-                    FROM {table_name} WHERE id = ANY(ARRAY[{id_placeholders}]::integer[])""",
-                *ids
-            )
-        finally:
-            await conn.close()
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"dbvntax error: {str(e)}")
+        id_placeholders = ", ".join([f"${i+1}" for i in range(len(ids))])
+        rows = await conn.fetch(
+            f"""SELECT id, so_hieu, ten, loai, co_quan,
+                       ngay_ban_hanh::text, hieu_luc_tu::text, tinh_trang,
+                       noi_dung, link_tvpl, sac_thue, importance, is_anchor
+                FROM documents WHERE id = ANY(ARRAY[{id_placeholders}]::integer[])""",
+            *ids
+        )
+    finally:
+        await conn.close()
 
     imported = []
     import re
     for row in rows:
-        content_html = row.get("content_html") or ""
+        content_html = row.get("noi_dung") or ""
         content_text = re.sub(r'<[^>]+>', ' ', content_html)
         content_text = re.sub(r'\s+', ' ', content_text).strip()
 
-        # Map doc_type
-        raw_type = (row.get("doc_type") or "").lower()
-        if "luật" in raw_type or "luat" in raw_type:
+        # Map loai → doc_type slug
+        raw_type = (row.get("loai") or "").lower()
+        if "luật" in raw_type:
             doc_type = "luat"
-        elif "nghị định" in raw_type or "nghi dinh" in raw_type:
+        elif "nghị định" in raw_type:
             doc_type = "nghi_dinh"
-        elif "thông tư" in raw_type or "thong tu" in raw_type:
+        elif "thông tư" in raw_type:
             doc_type = "thong_tu"
-        elif "hợp nhất" in raw_type or "hop nhat" in raw_type:
+        elif "hợp nhất" in raw_type:
             doc_type = "van_ban_hop_nhat"
+        elif "pháp lệnh" in raw_type:
+            doc_type = "phap_lenh"
+        elif "nghị quyết" in raw_type:
+            doc_type = "nghi_quyet"
+        elif "quyết định" in raw_type:
+            doc_type = "quyet_dinh"
         else:
-            doc_type = "thong_tu"
+            doc_type = "van_ban_khac"
+
+        # sac_thue → tax_types
+        sac_thue = list(row.get("sac_thue") or [])
+        # is_anchor OR is_priority param
+        doc_is_priority = is_priority or bool(row.get("is_anchor"))
+        # importance: 1=Luật, 2=NĐ, 3=TT, etc.
+        importance = row.get("importance") or (
+            1 if doc_type == "luat" else
+            2 if doc_type == "nghi_dinh" else
+            3 if doc_type in ("thong_tu", "van_ban_hop_nhat") else 4
+        )
 
         try:
             res = await db.execute(
                 text("""
                     INSERT INTO taxlegal.law_documents_v2
                         (title, doc_number, doc_type, issuer, issued_date,
-                         content_html, content_text, is_priority, imported_from,
-                         dbvntax_id, created_by)
+                         content_html, content_text, is_priority, importance,
+                         tax_types, link_tvpl, effective_status,
+                         imported_from, dbvntax_id, created_by)
                     VALUES
                         (:title, :doc_number, :doc_type, :issuer, :issued_date,
-                         :content_html, :content_text, :is_priority, 'dbvntax',
-                         :dbvntax_id, :created_by)
+                         :content_html, :content_text, :is_priority, :importance,
+                         :tax_types, :link_tvpl, :effective_status,
+                         'dbvntax', :dbvntax_id, :created_by)
                     ON CONFLICT DO NOTHING
                     RETURNING id, title
                 """),
                 {
-                    "title": row.get("title") or "Untitled",
-                    "doc_number": row.get("doc_number"),
+                    "title": row.get("ten") or "Untitled",
+                    "doc_number": row.get("so_hieu"),
                     "doc_type": doc_type,
-                    "issuer": row.get("issuer"),
-                    "issued_date": row.get("issued_date"),
+                    "issuer": row.get("co_quan"),
+                    "issued_date": row.get("ngay_ban_hanh"),
                     "content_html": content_html,
-                    "content_text": content_text[:100000],  # cap at 100k chars
-                    "is_priority": is_priority,
+                    "content_text": content_text[:100000],
+                    "is_priority": doc_is_priority,
+                    "importance": importance,
+                    "tax_types": sac_thue,
+                    "link_tvpl": row.get("link_tvpl"),
+                    "effective_status": row.get("tinh_trang") or "con_hieu_luc",
                     "dbvntax_id": row.get("id"),
                     "created_by": admin.id,
                 }

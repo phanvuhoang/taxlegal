@@ -36,70 +36,117 @@ class RetrievalResult:
 
 # ── Internal DB query ──────────────────────────────────────────────────────────
 
+# ── Tax type keyword map ───────────────────────────────────────────────────────
+# Maps query keywords → tax_types codes used in law_documents_v2
+_TAX_TYPE_HINTS: dict[str, str] = {
+    # TNDN / CIT
+    "tndn": "TNDN", "thu nhập doanh nghiệp": "TNDN", "cit": "TNDN",
+    # TNCN / PIT
+    "tncn": "TNCN", "thu nhập cá nhân": "TNCN", "pit": "TNCN",
+    # GTGT / VAT
+    "gtgt": "GTGT", "giá trị gia tăng": "GTGT", "vat": "GTGT",
+    # FCT
+    "fct": "FCT", "nhà thầu nước ngoài": "FCT", "nhà thầu": "FCT",
+    # TTDB / Excise
+    "ttdb": "TTDB", "tiêu thụ đặc biệt": "TTDB", "excise": "TTDB",
+    # XNK / Customs
+    "xnk": "XNK", "xuất nhập khẩu": "XNK", "hải quan": "XNK",
+    "customs": "XNK", "import duty": "XNK",
+    # TP / Transfer Pricing
+    "tp": "TP", "transfer pricing": "TP", "giá chuyển nhượng": "TP",
+    # HKD / Household business
+    "hkd": "HKD", "hộ kinh doanh": "HKD",
+    # HOA_DON
+    "hoa don": "HOA_DON", "hóa đơn": "HOA_DON", "invoice": "HOA_DON",
+    # THUE_QT / International tax
+    "thue_qt": "THUE_QT", "thuế quốc tế": "THUE_QT", "dta": "THUE_QT",
+    "hiệp định": "THUE_QT",
+}
+
+
+def _detect_tax_types_from_query(query: str) -> list[str]:
+    """Extract tax type codes from a query string."""
+    q_lower = query.lower()
+    found = []
+    for kw, code in _TAX_TYPE_HINTS.items():
+        if kw in q_lower and code not in found:
+            found.append(code)
+    return found
+
+
 async def query_internal_db(query: str, db: AsyncSession, limit: int = 10) -> list[dict]:
     """
     Query taxlegal.law_documents_v2 using full-text search + ILIKE fallback.
+    Detects tax_type hints from query and boosts matching documents.
     Returns list of result dicts with trust metadata.
     """
     results = []
+    detected_tax_types = _detect_tax_types_from_query(query)
 
-    # Full-text search using PostgreSQL tsvector
-    try:
-        fts_sql = text("""
-            SELECT
-                id,
-                title,
-                doc_number,
-                doc_type,
-                LEFT(content_text, 8000) AS content_text
-            FROM taxlegal.law_documents_v2
-            WHERE
-                to_tsvector('simple',
-                    coalesce(title, '') || ' ' || coalesce(content_text, ''))
-                @@ plainto_tsquery('simple', :query)
-            ORDER BY
-                ts_rank(
-                    to_tsvector('simple',
-                        coalesce(title, '') || ' ' || coalesce(content_text, '')),
-                    plainto_tsquery('simple', :query)
-                ) DESC
-            LIMIT :limit
-        """)
-        rows = await db.execute(fts_sql, {"query": query, "limit": limit})
-        for row in rows.mappings():
-            results.append({
-                "id": row["id"],
-                "title": row["title"],
-                "doc_number": row["doc_number"],
-                "doc_type": row["doc_type"],
-                "content_text": row["content_text"] or "",
-                "source_type": "internal_db",
-                "trust_level": "high",
-                "retrieval_method": "db_fulltext",
-            })
-    except Exception as e:
-        logger.warning(f"FTS query on law_documents_v2 failed: {e}")
-
-    # ILIKE fallback on title / doc_number
-    if len(results) < limit:
+    # ── Priority-first: if tax types detected, fetch is_priority docs for those types ──
+    if detected_tax_types:
         try:
-            ilike_sql = text("""
+            # Build literal array for asyncpg (no bound params for arrays)
+            type_list = ", ".join(f"'{t}'" for t in detected_tax_types)
+            priority_sql = text(f"""
                 SELECT
-                    id,
-                    title,
-                    doc_number,
-                    doc_type,
+                    id, title, doc_number, doc_type,
+                    is_priority, tax_types, importance,
                     LEFT(content_text, 8000) AS content_text
                 FROM taxlegal.law_documents_v2
                 WHERE
-                    title ILIKE :pattern
-                    OR doc_number ILIKE :pattern
-                ORDER BY id DESC
+                    is_active = TRUE
+                    AND is_priority = TRUE
+                    AND tax_types && ARRAY[{type_list}]::TEXT[]
+                ORDER BY importance ASC NULLS LAST, issued_date DESC NULLS LAST
                 LIMIT :limit
             """)
-            pattern = f"%{query[:100]}%"
-            rows = await db.execute(ilike_sql, {"pattern": pattern, "limit": limit - len(results)})
-            seen_ids = {r["id"] for r in results}
+            rows = await db.execute(priority_sql, {"limit": limit})
+            for row in rows.mappings():
+                results.append({
+                    "id": row["id"],
+                    "title": row["title"],
+                    "doc_number": row["doc_number"],
+                    "doc_type": row["doc_type"],
+                    "tax_types": list(row["tax_types"] or []),
+                    "is_priority": True,
+                    "content_text": row["content_text"] or "",
+                    "source_type": "internal_db",
+                    "trust_level": "high",
+                    "retrieval_method": "db_priority_tax_type",
+                })
+        except Exception as e:
+            logger.warning(f"Priority tax_type query failed: {e}")
+
+    # ── Full-text search using PostgreSQL tsvector (includes tax_types in index) ──
+    seen_ids = {r["id"] for r in results}
+    if len(results) < limit:
+        try:
+            fts_sql = text("""
+                SELECT
+                    id, title, doc_number, doc_type,
+                    is_priority, tax_types,
+                    LEFT(content_text, 8000) AS content_text
+                FROM taxlegal.law_documents_v2
+                WHERE
+                    is_active = TRUE
+                    AND to_tsvector('simple',
+                        coalesce(title, '') || ' ' ||
+                        coalesce(doc_number, '') || ' ' ||
+                        coalesce(array_to_string(tax_types, ' '), '') || ' ' ||
+                        coalesce(left(content_text, 10000), ''))
+                    @@ plainto_tsquery('simple', :query)
+                ORDER BY
+                    is_priority DESC,
+                    ts_rank(
+                        to_tsvector('simple',
+                            coalesce(title, '') || ' ' ||
+                            coalesce(left(content_text, 10000), '')),
+                        plainto_tsquery('simple', :query)
+                    ) DESC
+                LIMIT :limit
+            """)
+            rows = await db.execute(fts_sql, {"query": query, "limit": limit})
             for row in rows.mappings():
                 if row["id"] not in seen_ids:
                     results.append({
@@ -107,6 +154,46 @@ async def query_internal_db(query: str, db: AsyncSession, limit: int = 10) -> li
                         "title": row["title"],
                         "doc_number": row["doc_number"],
                         "doc_type": row["doc_type"],
+                        "tax_types": list(row["tax_types"] or []),
+                        "is_priority": bool(row["is_priority"]),
+                        "content_text": row["content_text"] or "",
+                        "source_type": "internal_db",
+                        "trust_level": "high",
+                        "retrieval_method": "db_fulltext",
+                    })
+                    seen_ids.add(row["id"])
+        except Exception as e:
+            logger.warning(f"FTS query on law_documents_v2 failed: {e}")
+
+    # ── ILIKE fallback on title / doc_number / tax_types ──
+    if len(results) < limit:
+        try:
+            ilike_sql = text("""
+                SELECT
+                    id, title, doc_number, doc_type,
+                    is_priority, tax_types,
+                    LEFT(content_text, 8000) AS content_text
+                FROM taxlegal.law_documents_v2
+                WHERE
+                    is_active = TRUE AND (
+                        title ILIKE :pattern
+                        OR doc_number ILIKE :pattern
+                        OR array_to_string(tax_types, ' ') ILIKE :pattern
+                    )
+                ORDER BY is_priority DESC, issued_date DESC NULLS LAST
+                LIMIT :limit
+            """)
+            pattern = f"%{query[:100]}%"
+            rows = await db.execute(ilike_sql, {"pattern": pattern, "limit": limit - len(results)})
+            for row in rows.mappings():
+                if row["id"] not in seen_ids:
+                    results.append({
+                        "id": row["id"],
+                        "title": row["title"],
+                        "doc_number": row["doc_number"],
+                        "doc_type": row["doc_type"],
+                        "tax_types": list(row["tax_types"] or []),
+                        "is_priority": bool(row["is_priority"]),
                         "content_text": row["content_text"] or "",
                         "source_type": "internal_db",
                         "trust_level": "high",

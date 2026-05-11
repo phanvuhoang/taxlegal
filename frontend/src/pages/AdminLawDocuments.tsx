@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, Link2, Database, FileText, Search, Tag, Trash2, Plus, RefreshCw, CheckCircle, XCircle, Star, Globe, Loader2 } from "lucide-react";
+import { Upload, Link2, Database, FileText, Search, Tag, Trash2, Plus, RefreshCw, CheckCircle, XCircle, Star, Loader2, ExternalLink, X, Eye } from "lucide-react";
 
 interface LawDoc {
   id: number;
@@ -16,13 +16,40 @@ interface LawDoc {
 
 interface DbvntaxDoc {
   id: number;
-  doc_number: string;
-  title: string;
-  doc_type: string;
-  issued_date: string | null;
+  so_hieu: string;
+  ten: string;
+  loai: string;
+  co_quan: string;
+  ngay_ban_hanh: string | null;
+  hieu_luc_tu: string | null;
+  tinh_trang: string | null;
+  sac_thue: string[];
+  importance: number;
+  is_anchor: boolean;
+  link_tvpl: string | null;
 }
 
 const DOC_TYPES = ["Luật", "Nghị định", "Thông tư", "Quyết định", "Công văn", "Nghị quyết", "Thông báo", "Khác"];
+const SAC_THUE_OPTIONS = [
+  { value: "", label: "Tất cả sắc thuế" },
+  { value: "GTGT", label: "Thuế GTGT" },
+  { value: "TNDN", label: "Thuế TNDN" },
+  { value: "TNCN", label: "Thuế TNCN" },
+  { value: "FCT", label: "Nhà thầu nước ngoài" },
+  { value: "TTDB", label: "Thuế TTDB" },
+  { value: "XNK", label: "Thuế XNK / Hải quan" },
+];
+
+const LOAI_COLORS: Record<string, string> = {
+  "Luật": "bg-indigo-50 text-indigo-700",
+  "Nghị định": "bg-blue-50 text-blue-700",
+  "Thông tư": "bg-cyan-50 text-cyan-700",
+  "Thông tư liên tịch": "bg-teal-50 text-teal-700",
+  "Văn bản hợp nhất": "bg-purple-50 text-purple-700",
+  "Pháp lệnh": "bg-orange-50 text-orange-700",
+  "Nghị quyết": "bg-amber-50 text-amber-700",
+  "Quyết định": "bg-green-50 text-green-700",
+};
 
 export default function AdminLawDocuments() {
   const [activeTab, setActiveTab] = useState<"list" | "upload" | "crawler" | "dbvntax">("list");
@@ -53,13 +80,18 @@ export default function AdminLawDocuments() {
   // dbvntax tab state
   const [dbDocs, setDbDocs] = useState<DbvntaxDoc[]>([]);
   const [dbSearch, setDbSearch] = useState("");
+  const [dbSacThue, setDbSacThue] = useState("");
   const [dbLoading, setDbLoading] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const [importPriority, setImportPriority] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [dbTotal, setDbTotal] = useState(0);
 
-  // dbvntax crawl sub-section state
-  const [crawlPriority, setCrawlPriority] = useState(false);
+  // HTML preview modal state
+  const [previewDoc, setPreviewDoc] = useState<DbvntaxDoc | null>(null);
+  const [previewHtml, setPreviewHtml] = useState<string>("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [importingId, setImportingId] = useState<number | null>(null);
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
@@ -170,11 +202,13 @@ export default function AdminLawDocuments() {
     try {
       const params = new URLSearchParams();
       if (dbSearch) params.set("search", dbSearch);
+      if (dbSacThue) params.set("sac_thue", dbSacThue);
       params.set("limit", "50");
       const res = await fetch(`/api/admin/dbvntax/list?${params}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setDbDocs(data.items || data || []);
+        setDbTotal(data.total || 0);
         setSelected([]);
       } else {
         showMsg("error", "Không thể kết nối dbvntax");
@@ -184,19 +218,21 @@ export default function AdminLawDocuments() {
     }
   };
 
-  const handleImport = async () => {
-    if (!selected.length) return;
-    setImporting(true);
+  const handleImport = async (ids?: number[]) => {
+    const idsToImport = ids || selected;
+    if (!idsToImport.length) return;
+    if (ids) setImportingId(ids[0]);
+    else setImporting(true);
     try {
       const res = await fetch("/api/admin/dbvntax/import", {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selected, is_priority: importPriority }),
+        body: JSON.stringify({ ids: idsToImport, is_priority: importPriority }),
       });
       if (res.ok) {
         const data = await res.json();
-        showMsg("success", `Đã import ${data.imported?.length || selected.length} văn bản thành công`);
-        setSelected([]);
+        showMsg("success", `Đã import ${data.imported} văn bản thành công`);
+        if (!ids) setSelected([]);
         loadDocs();
       } else {
         const err = await res.json();
@@ -204,30 +240,33 @@ export default function AdminLawDocuments() {
       }
     } finally {
       setImporting(false);
+      setImportingId(null);
     }
   };
 
-  const handleCrawl = async () => {
-    if (!crawlUrl) return;
-    setCrawling(true);
+  // Open preview modal: fetch HTML content
+  const openPreview = async (doc: DbvntaxDoc) => {
+    setPreviewDoc(doc);
+    setPreviewHtml("");
+    setPreviewLoading(true);
     try {
-      const res = await fetch("/api/admin/law-documents/crawl", {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ url: crawlUrl, is_priority: crawlPriority }),
-      });
+      const res = await fetch(`/api/admin/dbvntax/preview/${doc.id}`, { headers });
       if (res.ok) {
         const data = await res.json();
-        showMsg("success", `Đã crawl: "${data.title}" (${data.doc_number || "chưa xác định số hiệu"})`);
-        setCrawlUrl("");
-        loadDocs();
+        setPreviewHtml(data.noi_dung_html || "<p class='text-gray-400 italic'>Không có nội dung HTML</p>");
       } else {
-        const err = await res.json();
-        showMsg("error", err.detail || "Crawl thất bại");
+        setPreviewHtml("<p class='text-red-400'>Không thể tải nội dung</p>");
       }
+    } catch {
+      setPreviewHtml("<p class='text-red-400'>Lỗi kết nối</p>");
     } finally {
-      setCrawling(false);
+      setPreviewLoading(false);
     }
+  };
+
+  const closePreview = () => {
+    setPreviewDoc(null);
+    setPreviewHtml("");
   };
 
   const tabs = [
@@ -480,86 +519,71 @@ export default function AdminLawDocuments() {
 
       {/* ===== TAB: DBVNTAX ===== */}
       {activeTab === "dbvntax" && (
-        <div className="space-y-6">
-          {/* Crawl from URL */}
-          <div className="bg-white border rounded-lg p-4">
-            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-              <Globe className="w-4 h-4 text-[#028a39]" />
-              Crawl từ URL (thuvienphapluat.vn)
-            </h3>
-            <div className="flex gap-2">
-              <input
-                type="url"
-                className="flex-1 border rounded px-3 py-2 text-sm"
-                placeholder="https://thuvienphapluat.vn/van-ban/..."
-                value={crawlUrl}
-                onChange={e => setCrawlUrl(e.target.value)}
-              />
-              <label className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap">
-                <input type="checkbox" checked={crawlPriority} onChange={e => setCrawlPriority(e.target.checked)} />
-                Ưu tiên
-              </label>
-              <button
-                onClick={handleCrawl}
-                disabled={crawling || !crawlUrl}
-                className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50 flex items-center gap-2"
-              >
-                {crawling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
-                Crawl & Import
-              </button>
-            </div>
-          </div>
-
-          {/* Import from dbvntax DB */}
+        <div className="space-y-4">
+          {/* Search + filter bar */}
           <div className="bg-white border rounded-lg p-4">
             <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
               <Database className="w-4 h-4 text-[#028a39]" />
               Import từ dbvntax Database
             </h3>
-            <div className="flex gap-2 mb-3">
-              <input
-                type="text"
-                className="flex-1 border rounded px-3 py-2 text-sm"
-                placeholder="Tìm kiếm văn bản... (ví dụ: Thông tư 80, Nghị định 123)"
-                value={dbSearch}
-                onChange={e => setDbSearch(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && loadDbvntaxDocs()}
-              />
+            <div className="flex gap-2 mb-3 flex-wrap">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  className="w-full pl-9 border rounded px-3 py-2 text-sm"
+                  placeholder="Tìm theo số hiệu, tên văn bản..."
+                  value={dbSearch}
+                  onChange={e => setDbSearch(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && loadDbvntaxDocs()}
+                />
+              </div>
+              <select
+                className="border rounded px-3 py-2 text-sm"
+                value={dbSacThue}
+                onChange={e => setDbSacThue(e.target.value)}
+              >
+                {SAC_THUE_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
               <button
                 onClick={loadDbvntaxDocs}
                 disabled={dbLoading}
-                className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50"
+                className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50 flex items-center gap-2"
               >
-                {dbLoading ? "Đang tìm..." : "Tìm kiếm"}
+                {dbLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search size={14} />}
+                Tìm kiếm
               </button>
             </div>
 
             {dbDocs.length > 0 && (
               <>
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
                   <span className="text-sm text-gray-600">
                     {selected.length > 0
                       ? `Đã chọn ${selected.length} văn bản`
-                      : `${dbDocs.length} văn bản tìm thấy`}
+                      : `${dbDocs.length} / ${dbTotal} văn bản`}
                   </span>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <label className="flex items-center gap-1 text-sm">
                       <input type="checkbox" checked={importPriority} onChange={e => setImportPriority(e.target.checked)} />
                       Đánh dấu ưu tiên
                     </label>
                     <button
-                      onClick={handleImport}
+                      onClick={() => handleImport()}
                       disabled={selected.length === 0 || importing}
-                      className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50"
+                      className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50 flex items-center gap-2"
                     >
-                      {importing ? "Đang import..." : `Import ${selected.length} văn bản`}
+                      {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Import {selected.length} văn bản đã chọn
                     </button>
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto rounded-lg border">
                   <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
+                    <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
                       <tr>
                         <th className="p-2 text-left w-8">
                           <input
@@ -571,13 +595,19 @@ export default function AdminLawDocuments() {
                         <th className="p-2 text-left">Số hiệu</th>
                         <th className="p-2 text-left">Tên văn bản</th>
                         <th className="p-2 text-left">Loại</th>
-                        <th className="p-2 text-left">Ngày ban hành</th>
+                        <th className="p-2 text-left">Sắc thuế</th>
+                        <th className="p-2 text-left">Ngày BH</th>
+                        <th className="p-2 text-left w-16"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {dbDocs.map(doc => (
-                        <tr key={doc.id} className="hover:bg-gray-50">
-                          <td className="p-2">
+                        <tr
+                          key={doc.id}
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => openPreview(doc)}
+                        >
+                          <td className="p-2" onClick={e => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               checked={selected.includes(doc.id)}
@@ -588,10 +618,34 @@ export default function AdminLawDocuments() {
                               }
                             />
                           </td>
-                          <td className="p-2 font-mono text-xs">{doc.doc_number || "—"}</td>
-                          <td className="p-2 max-w-xs truncate" title={doc.title}>{doc.title}</td>
-                          <td className="p-2 text-gray-500">{doc.doc_type || "—"}</td>
-                          <td className="p-2 text-gray-500">{doc.issued_date || "—"}</td>
+                          <td className="p-2 font-mono text-xs text-gray-700 whitespace-nowrap">{doc.so_hieu || "—"}</td>
+                          <td className="p-2 max-w-xs">
+                            <span className="line-clamp-2 text-gray-900">{doc.ten}</span>
+                          </td>
+                          <td className="p-2">
+                            <span className={`text-xs px-2 py-0.5 rounded font-medium ${LOAI_COLORS[doc.loai] || "bg-gray-100 text-gray-600"}`}>
+                              {doc.loai || "—"}
+                            </span>
+                          </td>
+                          <td className="p-2">
+                            <div className="flex gap-1 flex-wrap">
+                              {(doc.sac_thue || []).map((st, i) => (
+                                <span key={i} className="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{st}</span>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="p-2 text-xs text-gray-500 whitespace-nowrap">
+                            {doc.ngay_ban_hanh ? new Date(doc.ngay_ban_hanh).toLocaleDateString("vi-VN") : "—"}
+                          </td>
+                          <td className="p-2" onClick={e => e.stopPropagation()}>
+                            <button
+                              title="Xem nội dung"
+                              onClick={() => openPreview(doc)}
+                              className="p-1.5 rounded hover:bg-[#028a39]/10 text-gray-400 hover:text-[#028a39]"
+                            >
+                              <Eye size={14} />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -601,10 +655,106 @@ export default function AdminLawDocuments() {
             )}
 
             {dbDocs.length === 0 && !dbLoading && (
-              <p className="text-sm text-gray-400 text-center py-4">
-                Nhập từ khóa và bấm Tìm kiếm để tìm văn bản từ database dbvntax
+              <p className="text-sm text-gray-400 text-center py-6">
+                Nhập từ khóa và bấm Tìm kiếm để tìm văn bản từ database dbvntax<br />
+                <span className="text-xs">(Luật, Nghị định, Thông tư, Văn bản hợp nhất...)</span>
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== HTML PREVIEW MODAL ===== */}
+      {previewDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={closePreview}>
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-4 p-5 border-b">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className={`text-xs px-2 py-0.5 rounded font-medium ${LOAI_COLORS[previewDoc.loai] || "bg-gray-100 text-gray-600"}`}>
+                    {previewDoc.loai}
+                  </span>
+                  {previewDoc.so_hieu && (
+                    <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">{previewDoc.so_hieu}</span>
+                  )}
+                  {previewDoc.ngay_ban_hanh && (
+                    <span className="text-xs text-gray-500">
+                      Ngày {new Date(previewDoc.ngay_ban_hanh).toLocaleDateString("vi-VN")}
+                    </span>
+                  )}
+                  {(previewDoc.sac_thue || []).map((st, i) => (
+                    <span key={i} className="text-xs bg-green-50 text-green-700 px-1.5 py-0.5 rounded">{st}</span>
+                  ))}
+                </div>
+                <h2 className="text-base font-semibold text-gray-900 leading-snug">{previewDoc.ten}</h2>
+                {previewDoc.co_quan && (
+                  <p className="text-xs text-gray-500 mt-0.5">{previewDoc.co_quan}</p>
+                )}
+              </div>
+              <button onClick={closePreview} className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 shrink-0">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body — HTML content */}
+            <div className="flex-1 overflow-y-auto p-5">
+              {previewLoading ? (
+                <div className="flex items-center justify-center py-16 text-gray-400">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                  Đang tải nội dung...
+                </div>
+              ) : (
+                <div
+                  className="prose prose-sm max-w-none text-gray-800 law-content"
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between gap-3 p-4 border-t bg-gray-50 rounded-b-xl">
+              <div className="flex items-center gap-2">
+                {previewDoc.link_tvpl && (
+                  <a
+                    href={previewDoc.link_tvpl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-sm text-[#028a39] hover:underline"
+                  >
+                    <ExternalLink size={14} />
+                    Xem trên thuvienphapluat.vn
+                  </a>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1 text-sm text-gray-600">
+                  <input
+                    type="checkbox"
+                    checked={importPriority}
+                    onChange={e => setImportPriority(e.target.checked)}
+                  />
+                  Ưu tiên
+                </label>
+                <button
+                  onClick={() => {
+                    handleImport([previewDoc.id]);
+                    closePreview();
+                  }}
+                  disabled={importingId === previewDoc.id}
+                  className="px-4 py-2 bg-[#028a39] text-white rounded-lg text-sm font-medium hover:bg-[#026d2d] disabled:opacity-50 flex items-center gap-2"
+                >
+                  {importingId === previewDoc.id ? (
+                    <><Loader2 size={14} className="animate-spin" /> Đang import...</>
+                  ) : (
+                    <><Plus size={14} /> Import văn bản này</>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
