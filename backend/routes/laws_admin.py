@@ -385,98 +385,88 @@ async def list_dbvntax_documents(
     """
     List tax law documents from dbvntax — only legal docs (not Công văn/Thông báo).
     Supports filtering by doc_type, sac_thue (tax type), and text search.
+    Always returns results (no search term required — default loads all legal docs).
     """
     conn = await _dbvntax_connect()
     try:
-        try:
-            # Confirmed: dbvntax uses 'documents' table
-            tables_to_try = ["documents", "van_ban", "vanbans", "tax_documents", "laws"]
-            table_name = None
-            for tbl in tables_to_try:
-                try:
-                    await conn.fetchrow(f"SELECT 1 FROM {tbl} LIMIT 1")
-                    table_name = tbl
-                    break
-                except Exception:
-                    continue
+        # ── Build WHERE clause ─────────────────────────────────────────────
+        # 1. Always exclude Công văn / Thông báo — embed legal types as SQL literals
+        #    (asyncpg does NOT support bound params for IN/ANY with text[] columns)
+        types_literal = ", ".join(f"'{t}'" for t in _DBVNTAX_LEGAL_TYPES)
+        conditions = [f"loai = ANY(ARRAY[{types_literal}]::varchar[])"]
+        params: list = []
 
-            if not table_name:
-                rows = await conn.fetch("""
-                    SELECT table_name FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-                    ORDER BY table_name
-                """)
-                return {"error": "Could not find document table", "available_tables": [r["table_name"] for r in rows]}
+        # 2. doc_type filter — ILIKE against loai column
+        if doc_type:
+            params.append(f"%{doc_type}%")
+            conditions.append(f"loai ILIKE ${len(params)}")
 
-            # Build WHERE clause — exclude Công văn, Thông báo
-            conditions = []
-            params: list = []
+        # 3. sac_thue filter — varchar[] overlap operator
+        #    sac_thue column is character varying[] in dbvntax, so cast to varchar[]
+        if sac_thue:
+            sac_thue_esc = sac_thue.replace("'", "''")
+            conditions.append(f"sac_thue && ARRAY['{sac_thue_esc}']::varchar[]")
 
-            # Legal types filter (escaped as literals — asyncpg positional params)
-            types_literal = ", ".join(f"'{t}'" for t in _DBVNTAX_LEGAL_TYPES)
-            conditions.append(f"loai = ANY(ARRAY[{types_literal}]::text[])")
+        # 4. Full-text search against ten + so_hieu
+        if search:
+            params.append(f"%{search}%")
+            idx = len(params)
+            conditions.append(f"(ten ILIKE ${idx} OR so_hieu ILIKE ${idx})")
 
-            if doc_type:
-                params.append(f"%{doc_type}%")
-                conditions.append(f"loai ILIKE ${len(params)}")
+        where = " AND ".join(conditions)
 
-            if sac_thue:
-                # sac_thue is a TEXT[] column in dbvntax
-                sac_thue_esc = sac_thue.replace("'", "''")
-                conditions.append(f"sac_thue && ARRAY['{sac_thue_esc}']::text[]")
+        # ── Paginate ────────────────────────────────────────────────────────
+        params.append(limit)   # $N
+        params.append(skip)    # $N+1
+        limit_idx = len(params) - 1
+        offset_idx = len(params)
 
-            if search:
-                params.append(f"%{search}%")
-                conditions.append(f"(ten ILIKE ${len(params)} OR so_hieu ILIKE ${len(params)})")
+        data_query = f"""
+            SELECT
+                id,
+                so_hieu,
+                ten,
+                loai,
+                co_quan,
+                ngay_ban_hanh::text AS ngay_ban_hanh,
+                hieu_luc_tu::text   AS hieu_luc_tu,
+                tinh_trang,
+                sac_thue,
+                importance,
+                is_anchor,
+                link_tvpl
+            FROM documents
+            WHERE {where}
+            ORDER BY importance ASC NULLS LAST, ngay_ban_hanh DESC NULLS LAST
+            LIMIT ${limit_idx} OFFSET ${offset_idx}
+        """
+        rows = await conn.fetch(data_query, *params)
 
-            where = " AND ".join(conditions) if conditions else "1=1"
-            params.extend([limit, skip])
-            query = f"""
-                SELECT
-                    id,
-                    so_hieu,
-                    ten,
-                    loai,
-                    co_quan,
-                    ngay_ban_hanh::text AS ngay_ban_hanh,
-                    hieu_luc_tu::text AS hieu_luc_tu,
-                    tinh_trang,
-                    sac_thue,
-                    importance,
-                    is_anchor,
-                    link_tvpl
-                FROM {table_name}
-                WHERE {where}
-                ORDER BY importance ASC NULLS LAST, ngay_ban_hanh DESC NULLS LAST
-                LIMIT ${len(params)-1} OFFSET ${len(params)}
-            """
-            rows = await conn.fetch(query, *params)
+        # Count (reuse same WHERE, strip limit/offset params)
+        count_params = params[:-2]
+        cnt = await conn.fetchrow(
+            f"SELECT COUNT(*) FROM documents WHERE {where}",
+            *count_params
+        )
+        total = cnt[0] if cnt else len(rows)
 
-            # Count total (without limit/offset)
-            count_params = params[:-2]
-            cnt = await conn.fetchrow(
-                f"SELECT COUNT(*) FROM {table_name} WHERE {where}",
-                *count_params
-            )
-            total = cnt[0] if cnt else len(rows)
+        items = []
+        for r in rows:
+            d = dict(r)
+            # asyncpg returns varchar[] as a Python list — ensure it is serialisable
+            st = d.get("sac_thue")
+            d["sac_thue"] = list(st) if st else []
+            items.append(d)
 
-            items = []
-            for r in rows:
-                d = dict(r)
-                # sac_thue may be asyncpg List type
-                if isinstance(d.get("sac_thue"), (list, tuple)):
-                    d["sac_thue"] = list(d["sac_thue"])
-                items.append(d)
-
-            return {"items": items, "total": total}
-        finally:
-            await conn.close()
+        return {"items": items, "total": total}
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"dbvntax list query failed: {e}")
         raise HTTPException(status_code=500, detail=f"dbvntax connection failed: {str(e)}")
+    finally:
+        await conn.close()
 
 
 @router.get("/api/admin/dbvntax/preview/{doc_id}")

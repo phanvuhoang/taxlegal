@@ -81,6 +81,7 @@ export default function AdminLawDocuments() {
   const [dbDocs, setDbDocs] = useState<DbvntaxDoc[]>([]);
   const [dbSearch, setDbSearch] = useState("");
   const [dbSacThue, setDbSacThue] = useState("");
+  const [dbDocType, setDbDocType] = useState("");
   const [dbLoading, setDbLoading] = useState(false);
   const [selected, setSelected] = useState<number[]>([]);
   const [importPriority, setImportPriority] = useState(false);
@@ -117,6 +118,8 @@ export default function AdminLawDocuments() {
 
   useEffect(() => { loadDocs(); }, []);
   useEffect(() => { if (activeTab === "list") loadDocs(); }, [search, filterType]);
+  // Auto-load dbvntax docs when switching to that tab
+  useEffect(() => { if (activeTab === "dbvntax" && dbDocs.length === 0) loadDbvntaxDocs(); }, [activeTab]);
 
   // AI Tag
   const aiTag = async (id: number) => {
@@ -203,7 +206,8 @@ export default function AdminLawDocuments() {
       const params = new URLSearchParams();
       if (dbSearch) params.set("search", dbSearch);
       if (dbSacThue) params.set("sac_thue", dbSacThue);
-      params.set("limit", "50");
+      if (dbDocType) params.set("doc_type", dbDocType);
+      params.set("limit", "100");
       const res = await fetch(`/api/admin/dbvntax/list?${params}`, { headers });
       if (res.ok) {
         const data = await res.json();
@@ -211,7 +215,8 @@ export default function AdminLawDocuments() {
         setDbTotal(data.total || 0);
         setSelected([]);
       } else {
-        showMsg("error", "Không thể kết nối dbvntax");
+        const err = await res.json().catch(() => ({}));
+        showMsg("error", err.detail || "Không thể kết nối dbvntax");
       }
     } finally {
       setDbLoading(false);
@@ -527,17 +532,31 @@ export default function AdminLawDocuments() {
               Import từ dbvntax Database
             </h3>
             <div className="flex gap-2 mb-3 flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
+              <div className="relative flex-1 min-w-[180px]">
                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   className="w-full pl-9 border rounded px-3 py-2 text-sm"
-                  placeholder="Tìm theo số hiệu, tên văn bản..."
+                  placeholder="Tìm số hiệu, tên văn bản..."
                   value={dbSearch}
                   onChange={e => setDbSearch(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && loadDbvntaxDocs()}
                 />
               </div>
+              <select
+                className="border rounded px-3 py-2 text-sm"
+                value={dbDocType}
+                onChange={e => setDbDocType(e.target.value)}
+              >
+                <option value="">Tất cả loại</option>
+                <option value="Luật">Luật</option>
+                <option value="Nghị định">Nghị định</option>
+                <option value="Thông tư">Thông tư</option>
+                <option value="Thông tư liên tịch">Thông tư liên tịch</option>
+                <option value="Văn bản hợp nhất">Văn bản hợp nhất</option>
+                <option value="Nghị quyết">Nghị quyết</option>
+                <option value="Quyết định">Quyết định</option>
+              </select>
               <select
                 className="border rounded px-3 py-2 text-sm"
                 value={dbSacThue}
@@ -655,10 +674,11 @@ export default function AdminLawDocuments() {
             )}
 
             {dbDocs.length === 0 && !dbLoading && (
-              <p className="text-sm text-gray-400 text-center py-6">
-                Nhập từ khóa và bấm Tìm kiếm để tìm văn bản từ database dbvntax<br />
-                <span className="text-xs">(Luật, Nghị định, Thông tư, Văn bản hợp nhất...)</span>
-              </p>
+              <div className="text-center py-8 text-gray-400">
+                <Database size={32} className="mx-auto mb-2 opacity-20" />
+                <p className="text-sm">Không có văn bản nào phù hợp</p>
+                <p className="text-xs mt-1">Thử bỏ filter hoặc thay đổi từ khóa</p>
+              </div>
             )}
           </div>
         </div>
