@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { priorityDocsApi, PriorityDoc, DOC_TYPES } from "../lib/writing";
 import {
   FileText, Plus, Trash2, Edit2, Loader2, X,
-  ChevronDown, BookMarked, Star
+  ChevronDown, BookMarked, Star, Database, Search
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -28,6 +28,15 @@ const DEFAULT_FORM: DocForm = {
   is_active: true,
 };
 
+// Interface for law_documents_v2 records
+interface LawDocPriority {
+  id: number;
+  title: string;
+  doc_number: string;
+  doc_type: string;
+  is_priority: boolean;
+}
+
 export default function AdminPriorityDocs() {
   const [docs, setDocs] = useState<PriorityDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +45,18 @@ export default function AdminPriorityDocs() {
   const [form, setForm] = useState<DocForm>(DEFAULT_FORM);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Main tab: "writing" | "law"
+  const [mainTab, setMainTab] = useState<"writing" | "law">("writing");
+
+  // Law docs state
+  const [lawDocs, setLawDocs] = useState<LawDocPriority[]>([]);
+  const [lawSearch, setLawSearch] = useState("");
+  const [lawTab, setLawTab] = useState<"priority" | "all">("priority");
+  const [lawLoading, setLawLoading] = useState(false);
+
+  const token = localStorage.getItem("token");
+  const headers = { Authorization: `Bearer ${token}` };
 
   const loadDocs = async () => {
     try {
@@ -48,7 +69,41 @@ export default function AdminPriorityDocs() {
     }
   };
 
+  const loadLawDocs = async (priorityOnly = true) => {
+    setLawLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (priorityOnly) params.set("is_priority", "true");
+      if (lawSearch) params.set("search", lawSearch);
+      params.set("limit", "100");
+      const res = await fetch(`/api/admin/law-documents?${params}`, { headers });
+      if (res.ok) setLawDocs(await res.json());
+    } finally {
+      setLawLoading(false);
+    }
+  };
+
   useEffect(() => { loadDocs(); }, []);
+  useEffect(() => { loadLawDocs(true); }, []);
+
+  // Reload law docs when lawTab changes
+  useEffect(() => {
+    loadLawDocs(lawTab === "priority");
+  }, [lawTab]);
+
+  const toggleLawPriority = async (id: number, current: boolean) => {
+    const res = await fetch(`/api/admin/law-documents/${id}`, {
+      method: "PUT",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ is_priority: !current }),
+    });
+    if (res.ok) {
+      toast.success(!current ? "Đã đánh dấu ưu tiên" : "Đã bỏ đánh dấu");
+      loadLawDocs(lawTab === "priority");
+    } else {
+      toast.error("Cập nhật thất bại");
+    }
+  };
 
   const openCreate = () => {
     setForm(DEFAULT_FORM);
@@ -123,92 +178,240 @@ export default function AdminPriorityDocs() {
             <p className="text-sm text-gray-500">Tài liệu ưu tiên — inject đầu tiên vào writing prompts</p>
           </div>
         </div>
+        {mainTab === "writing" && (
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium"
+            style={{ background: "#028a39" }}
+          >
+            <Plus className="w-4 h-4" />
+            Thêm tài liệu
+          </button>
+        )}
+      </div>
+
+      {/* Main Tab Switcher */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
         <button
-          onClick={openCreate}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm font-medium"
-          style={{ background: "#028a39" }}
+          onClick={() => setMainTab("writing")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            mainTab === "writing" ? "bg-white text-[#028a39] shadow-sm" : "text-gray-600 hover:text-gray-900"
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          Thêm tài liệu
+          <BookMarked className="w-4 h-4" />
+          Writing Priority Docs
+        </button>
+        <button
+          onClick={() => setMainTab("law")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            mainTab === "law" ? "bg-white text-[#028a39] shadow-sm" : "text-gray-600 hover:text-gray-900"
+          }`}
+        >
+          <Database className="w-4 h-4" />
+          Văn bản Luật ưu tiên
         </button>
       </div>
 
-      {/* Info box */}
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-        <strong>Cơ chế Anchor Documents:</strong> Tài liệu có priority_level thấp hơn sẽ được inject trước (level 1 = cao nhất).
-        AI sẽ ưu tiên trích dẫn từ các tài liệu này trước khi tìm nguồn khác.
-      </div>
+      {/* ===== TAB: WRITING PRIORITY DOCS ===== */}
+      {mainTab === "writing" && (
+        <>
+          {/* Info box */}
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+            <strong>Cơ chế Anchor Documents:</strong> Tài liệu có priority_level thấp hơn sẽ được inject trước (level 1 = cao nhất).
+            AI sẽ ưu tiên trích dẫn từ các tài liệu này trước khi tìm nguồn khác.
+          </div>
 
-      {/* List */}
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#028a39" }} />
-        </div>
-      ) : docs.length === 0 ? (
-        <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-200">
-          <BookMarked className="w-12 h-12 mx-auto mb-3 text-gray-300" />
-          <p className="text-gray-500">Chưa có priority docs nào</p>
-          <p className="text-xs text-gray-400 mt-1 mb-4">Thêm văn bản luật quan trọng làm anchor document</p>
-          <button onClick={openCreate}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm"
-            style={{ background: "#028a39" }}>
-            <Plus className="w-4 h-4" /> Thêm tài liệu
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {docs.map((doc) => (
-            <div key={doc.id}
-              className={`bg-white rounded-xl border transition-colors ${doc.is_active ? "border-gray-100" : "border-gray-200 opacity-60"}`}>
-              <div className="p-4 flex items-start gap-3">
-                {/* Priority badge */}
-                <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
-                  style={{ background: doc.priority_level === 1 ? "#028a39" : doc.priority_level <= 3 ? "#0284c7" : "#6b7280" }}>
-                  {doc.priority_level}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-semibold text-gray-900 truncate">{doc.title}</p>
-                    <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
-                      {docTypeLabel(doc.doc_type)}
-                    </span>
-                    {!doc.is_active && (
-                      <span className="px-2 py-0.5 text-xs rounded-full bg-red-50 text-red-600">Tắt</span>
-                    )}
+          {/* List */}
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#028a39" }} />
+            </div>
+          ) : docs.length === 0 ? (
+            <div className="text-center py-20 bg-white rounded-xl border border-dashed border-gray-200">
+              <BookMarked className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="text-gray-500">Chưa có priority docs nào</p>
+              <p className="text-xs text-gray-400 mt-1 mb-4">Thêm văn bản luật quan trọng làm anchor document</p>
+              <button onClick={openCreate}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-white text-sm"
+                style={{ background: "#028a39" }}>
+                <Plus className="w-4 h-4" /> Thêm tài liệu
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {docs.map((doc) => (
+                <div key={doc.id}
+                  className={`bg-white rounded-xl border transition-colors ${doc.is_active ? "border-gray-100" : "border-gray-200 opacity-60"}`}>
+                  <div className="p-4 flex items-start gap-3">
+                    {/* Priority badge */}
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold"
+                      style={{ background: doc.priority_level === 1 ? "#028a39" : doc.priority_level <= 3 ? "#0284c7" : "#6b7280" }}>
+                      {doc.priority_level}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-gray-900 truncate">{doc.title}</p>
+                        <span className="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-600">
+                          {docTypeLabel(doc.doc_type)}
+                        </span>
+                        {!doc.is_active && (
+                          <span className="px-2 py-0.5 text-xs rounded-full bg-red-50 text-red-600">Tắt</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
+                        {doc.source_url && (
+                          <a href={doc.source_url} target="_blank" rel="noopener noreferrer"
+                            className="text-blue-500 hover:underline truncate max-w-xs">{doc.source_url}</a>
+                        )}
+                        <span>{doc.content.length.toLocaleString()} ký tự</span>
+                      </p>
+                      {/* Expandable content */}
+                      <button
+                        onClick={() => setExpandedId(expandedId === doc.id ? null : doc.id)}
+                        className="text-xs text-gray-400 hover:text-gray-600 mt-1 flex items-center gap-1">
+                        <ChevronDown className={`w-3 h-3 transition-transform ${expandedId === doc.id ? "rotate-180" : ""}`} />
+                        {expandedId === doc.id ? "Ẩn nội dung" : "Xem nội dung"}
+                      </button>
+                      {expandedId === doc.id && (
+                        <pre className="mt-2 text-xs text-gray-600 bg-gray-50 rounded-lg p-3 max-h-60 overflow-auto whitespace-pre-wrap">
+                          {doc.content}
+                        </pre>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openEdit(doc)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleDelete(doc.id, doc.title)}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-400 mt-0.5 flex items-center gap-2">
-                    {doc.source_url && (
-                      <a href={doc.source_url} target="_blank" rel="noopener noreferrer"
-                        className="text-blue-500 hover:underline truncate max-w-xs">{doc.source_url}</a>
-                    )}
-                    <span>{doc.content.length.toLocaleString()} ký tự</span>
-                  </p>
-                  {/* Expandable content */}
-                  <button
-                    onClick={() => setExpandedId(expandedId === doc.id ? null : doc.id)}
-                    className="text-xs text-gray-400 hover:text-gray-600 mt-1 flex items-center gap-1">
-                    <ChevronDown className={`w-3 h-3 transition-transform ${expandedId === doc.id ? "rotate-180" : ""}`} />
-                    {expandedId === doc.id ? "Ẩn nội dung" : "Xem nội dung"}
-                  </button>
-                  {expandedId === doc.id && (
-                    <pre className="mt-2 text-xs text-gray-600 bg-gray-50 rounded-lg p-3 max-h-60 overflow-auto whitespace-pre-wrap">
-                      {doc.content}
-                    </pre>
-                  )}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button onClick={() => openEdit(doc)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button onClick={() => handleDelete(doc.id, doc.title)}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ===== TAB: VĂN BẢN LUẬT ƯU TIÊN ===== */}
+      {mainTab === "law" && (
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+            <strong>Văn bản Luật ưu tiên (law_documents_v2):</strong> Quản lý cờ <code>is_priority</code> trực tiếp trên kho văn bản luật.
+            Các văn bản được đánh dấu ưu tiên sẽ được ưu tiên truy vấn trong RAG.
+          </div>
+
+          {/* Sub-tabs: Priority only / All */}
+          <div className="flex gap-2 items-center">
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setLawTab("priority")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  lawTab === "priority" ? "bg-white text-[#028a39] shadow-sm" : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <Star className="w-3.5 h-3.5" />
+                Đang ưu tiên
+              </button>
+              <button
+                onClick={() => setLawTab("all")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                  lawTab === "all" ? "bg-white text-[#028a39] shadow-sm" : "text-gray-600 hover:text-gray-900"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                Tất cả văn bản
+              </button>
+            </div>
+
+            {/* Search */}
+            <div className="relative flex-1 max-w-sm ml-2">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm"
+                placeholder="Tìm tiêu đề, số hiệu..."
+                value={lawSearch}
+                onChange={e => setLawSearch(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && loadLawDocs(lawTab === "priority")}
+              />
+            </div>
+            <button
+              onClick={() => loadLawDocs(lawTab === "priority")}
+              disabled={lawLoading}
+              className="px-3 py-2 bg-[#028a39] text-white rounded-lg text-sm hover:bg-[#016b2c] disabled:opacity-50"
+            >
+              {lawLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Tìm kiếm"}
+            </button>
+          </div>
+
+          {/* Law docs table */}
+          {lawLoading ? (
+            <div className="flex justify-center py-16">
+              <Loader2 className="w-8 h-8 animate-spin" style={{ color: "#028a39" }} />
+            </div>
+          ) : lawDocs.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-xl border border-dashed border-gray-200">
+              <Database className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+              <p className="text-gray-500">
+                {lawTab === "priority" ? "Chưa có văn bản luật nào được đánh dấu ưu tiên" : "Không tìm thấy văn bản nào"}
+              </p>
+              {lawTab === "priority" && (
+                <p className="text-xs text-gray-400 mt-1">
+                  Chuyển sang tab "Tất cả văn bản" để đánh dấu ưu tiên
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-100">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Số hiệu</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Tên văn bản</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Loại</th>
+                    <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wide w-32">Ưu tiên</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {lawDocs.map((doc) => (
+                    <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600 whitespace-nowrap">
+                        {doc.doc_number || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-900 max-w-md">
+                        <span className="truncate block" title={doc.title}>{doc.title}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs whitespace-nowrap">
+                          {doc.doc_type || "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => toggleLawPriority(doc.id, doc.is_priority)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            doc.is_priority
+                              ? "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                              : "bg-gray-100 text-gray-500 hover:bg-gray-200 border border-gray-200"
+                          }`}
+                        >
+                          <Star className={`w-3.5 h-3.5 ${doc.is_priority ? "fill-amber-400 text-amber-400" : ""}`} />
+                          {doc.is_priority ? "Bỏ ưu tiên" : "Đánh dấu"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-400">
+                {lawDocs.length} văn bản {lawTab === "priority" ? "đang được đánh dấu ưu tiên" : ""}
               </div>
             </div>
-          ))}
+          )}
         </div>
       )}
 

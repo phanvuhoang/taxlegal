@@ -51,7 +51,7 @@ async def query_internal_db(query: str, db: AsyncSession, limit: int = 10) -> li
                 title,
                 doc_number,
                 doc_type,
-                LEFT(content_text, 2000) AS content_text
+                LEFT(content_text, 8000) AS content_text
             FROM taxlegal.law_documents_v2
             WHERE
                 to_tsvector('simple',
@@ -89,7 +89,7 @@ async def query_internal_db(query: str, db: AsyncSession, limit: int = 10) -> li
                     title,
                     doc_number,
                     doc_type,
-                    LEFT(content_text, 2000) AS content_text
+                    LEFT(content_text, 8000) AS content_text
                 FROM taxlegal.law_documents_v2
                 WHERE
                     title ILIKE :pattern
@@ -182,7 +182,7 @@ async def query_dbvntax(query: str, dbvntax_db: AsyncSession, limit: int = 10) -
                     "title": row_dict.get(title_col, ""),
                     "doc_number": row_dict.get("so_hieu", row_dict.get("so_van_ban", "")),
                     "doc_type": row_dict.get("loai_van_ban", row_dict.get("doc_type", "")),
-                    "content_text": str(row_dict.get(content_col, ""))[:2000],
+                    "content_text": str(row_dict.get(content_col, ""))[:8000],
                     "source_type": "dbvntax",
                     "trust_level": "high",
                     "retrieval_method": "dbvntax_query",

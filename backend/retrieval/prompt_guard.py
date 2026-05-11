@@ -35,6 +35,11 @@ def build_retrieval_context_block(retrieval_result: "RetrievalResult") -> str:
     lines = ["\n## RETRIEVED SOURCES"]
     all_results = retrieval_result.db_results + retrieval_result.web_results
 
+    # Sort: priority docs first, then internal DB, then web
+    all_results.sort(key=lambda r: (
+        0 if r.get("is_priority") else (1 if r.get("source_type") == "internal_db" else 2)
+    ))
+
     if not all_results:
         lines.append("\n[No sources retrieved — do not fabricate legal provisions.]\n")
         return "\n".join(lines)
@@ -49,7 +54,7 @@ def build_retrieval_context_block(retrieval_result: "RetrievalResult") -> str:
             lines.append(f"Title: {result['title']}")
         # Prefer 'content_text', fall back to 'answer' for web results
         excerpt = result.get("content_text") or result.get("answer") or ""
-        lines.append(f"Excerpt: {excerpt[:1000]}")
+        lines.append(f"Excerpt: {excerpt[:6000]}")
         if result.get("source_url"):
             lines.append(f"Source URL: {result['source_url']}")
 

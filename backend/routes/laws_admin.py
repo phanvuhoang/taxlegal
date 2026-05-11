@@ -403,22 +403,22 @@ async def list_dbvntax_documents(
             # Filter to only legal doc types (not công văn)
             legal_types = ['Luật', 'Nghị định', 'Thông tư', 'Văn bản hợp nhất', 'Pháp lệnh']
             type_placeholders = ", ".join([f"${i+1}" for i in range(len(legal_types))])
-            conditions.append(f"(loai_vb IS NULL OR loai_vb = ANY(ARRAY[{type_placeholders}]))")
+            conditions.append(f"(loai IS NULL OR loai = ANY(ARRAY[{type_placeholders}]))")
             params.extend(legal_types)
 
             if doc_type:
                 params.append(f"%{doc_type}%")
-                conditions.append(f"loai_vb ILIKE ${len(params)}")
+                conditions.append(f"loai ILIKE ${len(params)}")
 
             if search:
                 params.append(f"%{search}%")
-                conditions.append(f"(ten_vb ILIKE ${len(params)} OR so_ky_hieu ILIKE ${len(params)})")
+                conditions.append(f"(ten ILIKE ${len(params)} OR so_hieu ILIKE ${len(params)})")
 
             params.extend([limit, skip])
             where = " AND ".join(conditions)
             query = f"""
-                SELECT id, ten_vb as title, so_ky_hieu as doc_number,
-                       loai_vb as doc_type, co_quan_bh as issuer,
+                SELECT id, ten as title, so_hieu as doc_number,
+                       loai as doc_type, co_quan_ban_hanh as issuer,
                        ngay_ban_hanh as issued_date
                 FROM {table_name}
                 WHERE {where}
@@ -480,8 +480,8 @@ async def import_from_dbvntax(
 
             id_placeholders = ", ".join([f"${i+1}" for i in range(len(ids))])
             rows = await conn.fetch(
-                f"""SELECT id, ten_vb as title, so_ky_hieu as doc_number,
-                           loai_vb as doc_type, co_quan_bh as issuer,
+                f"""SELECT id, ten as title, so_hieu as doc_number,
+                           loai as doc_type, co_quan_ban_hanh as issuer,
                            ngay_ban_hanh as issued_date, noi_dung as content_html
                     FROM {table_name} WHERE id = ANY(ARRAY[{id_placeholders}]::integer[])""",
                 *ids
@@ -599,66 +599,232 @@ async def search_law_documents_public(
     ]
 
 
-# ── Crawl URL via CrawlKit ────────────────────────────────────────────────────
-
-class CrawlRequest(BaseModel):
-    url: str
-    title: Optional[str] = None
-    doc_number: Optional[str] = None
-    doc_type: str = "Thông tư"
-    is_priority: bool = False
+# ── Crawl URL via CrawlKit / direct fetch ────────────────────────────────────
 
 
-@router.post("/api/admin/law-documents/crawl", status_code=201)
+@router.post("/api/admin/law-documents/crawl")
 async def crawl_law_document(
-    req: CrawlRequest,
+    body: dict,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ):
-    """Crawl a URL using CrawlKit and save as a law document."""
-    import httpx
-    crawlkit_url = os.getenv("CRAWLKIT_API_URL", "https://crawlkit.gpt4vn.com")
+    """
+    Crawl a URL from thuvienphapluat.vn (or any legal site) and save as law document.
+    body: {"url": "https://...", "is_priority": false, "doc_type": "Thông tư"}
+    Uses CrawlKit API if CRAWLKIT_API_KEY is set, otherwise fetches directly.
+    """
+    url = body.get("url", "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="url required")
+    is_priority = body.get("is_priority", False)
+    forced_doc_type = body.get("doc_type")
+
+    from backend.services.tvpl_parser import crawl_via_crawlkit, fetch_and_parse_tvpl
+
     crawlkit_key = os.getenv("CRAWLKIT_API_KEY", "")
+    if crawlkit_key:
+        parsed = await crawl_via_crawlkit(url, crawlkit_key)
+    else:
+        parsed = await fetch_and_parse_tvpl(url)
+
+    if parsed.get("error"):
+        raise HTTPException(status_code=422, detail=f"Crawl failed: {parsed['error']}")
+    if not parsed.get("title") and not parsed.get("content_html"):
+        raise HTTPException(status_code=422, detail="No content extracted from URL")
+
+    title = parsed.get("title") or url
+    doc_type = forced_doc_type or parsed.get("loai") or "Văn bản khác"
+
+    result = await db.execute(text("""
+        INSERT INTO taxlegal.law_documents_v2
+            (title, doc_number, doc_type, issuer, issued_date,
+             content_html, content_text, source_url, tags,
+             is_priority, imported_from, is_active, created_by)
+        VALUES
+            (:title, :doc_number, :doc_type, :issuer, :issued_date,
+             :content_html, :content_text, :source_url, :tags,
+             :is_priority, 'crawl', TRUE, :created_by)
+        ON CONFLICT (source_url) DO UPDATE SET
+            title = EXCLUDED.title,
+            content_html = EXCLUDED.content_html,
+            content_text = EXCLUDED.content_text,
+            updated_at = NOW()
+        RETURNING id, title, doc_number, is_priority
+    """), {
+        "title": title,
+        "doc_number": parsed.get("so_hieu", ""),
+        "doc_type": doc_type,
+        "issuer": parsed.get("co_quan_ban_hanh", ""),
+        "issued_date": parsed.get("ngay_ban_hanh") or None,
+        "content_html": parsed.get("content_html", ""),
+        "content_text": parsed.get("content_text", ""),
+        "source_url": url,
+        "tags": [],
+        "is_priority": is_priority,
+        "created_by": admin.id,
+    })
+    row = result.fetchone()
+    await db.commit()
+    return {
+        "id": row.id, "title": row.title,
+        "doc_number": row.doc_number, "is_priority": row.is_priority,
+        "status": "crawled"
+    }
+
+
+# ── Laws-to-Skill ─────────────────────────────────────────────────────────────
+
+
+@router.post("/api/admin/skills/from-laws")
+async def create_skill_from_laws(
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """
+    Generate a skill draft from selected law documents.
+    body: {"law_ids": [1,2,3], "skill_name": "Optional name", "category": "tax"}
+    """
+    law_ids = body.get("law_ids", [])
+    if not law_ids or len(law_ids) > 10:
+        raise HTTPException(status_code=400, detail="Provide 1–10 law_ids")
+
+    from backend.ai_provider import call_ai
+
+    # Fetch law documents
+    placeholders = ", ".join([f":id{i}" for i in range(len(law_ids))])
+    params = {f"id{i}": lid for i, lid in enumerate(law_ids)}
+    result = await db.execute(
+        text(f"""
+            SELECT id, title, doc_number, doc_type, content_text
+            FROM taxlegal.law_documents_v2
+            WHERE id IN ({placeholders}) AND is_active = TRUE
+        """),
+        params
+    )
+    rows = result.fetchall()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No law documents found for given IDs")
+
+    # Build context from laws
+    law_context = ""
+    doc_titles = []
+    for row in rows:
+        doc_titles.append(f"{row.doc_number or ''} {row.title}".strip())
+        excerpt = (row.content_text or "")[:3000]
+        law_context += f"\n\n### {row.doc_number or row.title}\n{excerpt}"
+
+    # Detect category from doc types
+    all_text = law_context.lower()
+    if "tncn" in all_text or "thu nhập cá nhân" in all_text:
+        auto_category = "pit"
+    elif "tndn" in all_text or "thu nhập doanh nghiệp" in all_text:
+        auto_category = "cit"
+    elif "gtgt" in all_text or "giá trị gia tăng" in all_text:
+        auto_category = "vat"
+    elif "hải quan" in all_text or "xuất nhập khẩu" in all_text:
+        auto_category = "customs"
+    elif "nhà thầu" in all_text or "fct" in all_text:
+        auto_category = "fct"
+    else:
+        auto_category = body.get("category", "tax")
+
+    skill_name = body.get("skill_name") or f"Skill từ {', '.join(doc_titles[:2])}"
+
+    system_prompt = """Bạn là chuyên gia thuế Việt Nam. Tạo một skill file cho AI assistant dựa trên các văn bản pháp luật được cung cấp.
+
+Output PHẢI có format YAML frontmatter + Markdown:
+```yaml
+---
+name: <tên skill>
+version: "1.0.0"  
+description: <mô tả ngắn>
+category: <tax|customs|process>
+tags: [tag1, tag2]
+applicable_bots: [ja-advisory, ja-compliance]
+editable: true
+---
+```
+
+Sau frontmatter là nội dung markdown với:
+1. Tóm tắt quy định chính (bullet points)
+2. Các điều khoản quan trọng cần trích dẫn
+3. Anti-hallucination rules (KHÔNG bịa đặt)
+4. Ví dụ áp dụng thực tế
+Viết hoàn toàn bằng tiếng Việt."""
+
+    user_prompt = f"""Tạo skill từ các văn bản pháp luật sau:
+
+Tên skill gợi ý: {skill_name}
+Category: {auto_category}
+
+Văn bản pháp luật:
+{law_context}
+
+Tạo skill file đầy đủ và chi tiết."""
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(
-                f"{crawlkit_url}/api/crawl",
-                headers={"Authorization": f"Bearer {crawlkit_key}"},
-                json={"url": req.url, "format": "html"},
-            )
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail=f"CrawlKit error: {resp.text[:200]}")
+        response = await call_ai(
+            model_id="deepseek-chat",
+            messages=[{"role": "user", "content": user_prompt}],
+            system_prompt=system_prompt,
+            max_tokens=4096,
+            temperature=0.3,
+        )
+        draft_content = response.get("content", "")
+    except Exception as e:
+        logger.error(f"LLM skill-from-laws failed: {e}")
+        draft_content = f"""---
+name: {skill_name}
+version: "1.0.0"
+description: Skill tự động từ {len(rows)} văn bản pháp luật
+category: {auto_category}
+tags: [{auto_category}]
+applicable_bots: [ja-advisory, ja-compliance]
+editable: true
+---
 
-        data = resp.json()
-        html_content = data.get("html") or data.get("content") or ""
-        # strip tags for plain text
-        import re
-        content_text = re.sub(r"<[^>]+>", " ", html_content).strip()
-        title = req.title or data.get("title") or req.url
+## Nguồn văn bản
+{chr(10).join(f'- {t}' for t in doc_titles)}
 
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"CrawlKit connection error: {str(e)}")
+## Nội dung chính
+[Vui lòng bổ sung nội dung thủ công]
+"""
 
-    result = await db.execute(
-        text("""
-            INSERT INTO taxlegal.law_documents_v2
-                (title, doc_number, doc_type, content_html, content_text, source_url, is_priority, imported_from, created_by)
-            VALUES
-                (:title, :doc_number, :doc_type, :content_html, :content_text, :source_url, :is_priority, 'crawler', :created_by)
-            RETURNING id
-        """),
-        {
-            "title": title,
-            "doc_number": req.doc_number,
-            "doc_type": req.doc_type,
-            "content_html": html_content,
-            "content_text": content_text[:50000],
-            "source_url": req.url,
-            "is_priority": req.is_priority,
-            "created_by": _admin.id,
-        }
-    )
+    # Save as skill_draft
+    import re as _re
+    from datetime import datetime as _dt
+    now = _dt.utcnow()
+    # Build suggested slug
+    suggested_slug = _re.sub(r"[^a-z0-9]+", "-", auto_category + "-from-laws").strip("-")
+
+    draft_result = await db.execute(text("""
+        INSERT INTO taxlegal.skill_drafts
+            (filename, original_size_bytes, extracted_text, topic_slug, topic_label,
+             draft_content, suggested_slug, status, created_by, created_at, updated_at)
+        VALUES
+            (:filename, :size, :text, :topic_slug, :topic_label,
+             :draft_content, :suggested_slug, 'draft', :created_by, :now, :now)
+        RETURNING id
+    """), {
+        "filename": f"from-laws-{'-'.join(str(i) for i in law_ids)}.md",
+        "size": len(draft_content),
+        "text": law_context[:50000],
+        "topic_slug": auto_category,
+        "topic_label": auto_category.upper(),
+        "draft_content": draft_content,
+        "suggested_slug": suggested_slug,
+        "created_by": admin.id,
+        "now": now,
+    })
+    draft_row = draft_result.fetchone()
     await db.commit()
-    new_id = result.fetchone()[0]
-    return {"id": new_id, "title": title, "message": "Crawl thành công"}
+
+    return {
+        "draft_id": draft_row[0],
+        "suggested_slug": suggested_slug,
+        "law_count": len(rows),
+        "doc_titles": doc_titles,
+        "draft_content": draft_content,
+        "message": f"Skill draft created from {len(rows)} law documents. Review and save via /api/skills/draft/{draft_row[0]}/save"
+    }

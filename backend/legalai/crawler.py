@@ -65,22 +65,22 @@ class TaxCrawler:
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
                 r = await client.post(
-                    f"{self.base_url}/api/scrape",
+                    f"{self.base_url}/v1/scrape",
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
                         "url": url,
-                        "format": "text",
-                        "extract_metadata": True,
+                        "formats": ["html", "markdown"],
+                        "onlyMainContent": True,
                     },
                 )
                 r.raise_for_status()
                 data = r.json()
                 return {
                     "success": True,
-                    "content": data.get("content", "") or data.get("text", ""),
+                    "content": data.get("html") or data.get("markdown") or data.get("content", ""),
                     "title": data.get("title") or data.get("metadata", {}).get("title", ""),
                     "url": url,
                 }

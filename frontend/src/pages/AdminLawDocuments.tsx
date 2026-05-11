@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Upload, Link2, Database, FileText, Search, Tag, Trash2, Plus, RefreshCw, CheckCircle, XCircle, Star } from "lucide-react";
+import { Upload, Link2, Database, FileText, Search, Tag, Trash2, Plus, RefreshCw, CheckCircle, XCircle, Star, Globe, Loader2 } from "lucide-react";
 
 interface LawDoc {
   id: number;
@@ -57,6 +57,9 @@ export default function AdminLawDocuments() {
   const [selected, setSelected] = useState<number[]>([]);
   const [importPriority, setImportPriority] = useState(false);
   const [importing, setImporting] = useState(false);
+
+  // dbvntax crawl sub-section state
+  const [crawlPriority, setCrawlPriority] = useState(false);
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
@@ -145,8 +148,8 @@ export default function AdminLawDocuments() {
     } finally { setUploading(false); }
   };
 
-  // Crawl URL
-  const handleCrawl = async () => {
+  // Crawl URL (Crawler tab)
+  const handleCrawlTab = async () => {
     if (!crawlUrl) { showMsg("error", "Nhập URL"); return; }
     setCrawling(true);
     try {
@@ -160,32 +163,71 @@ export default function AdminLawDocuments() {
     } finally { setCrawling(false); }
   };
 
-  // Load dbvntax docs
-  const loadDbDocs = async () => {
+  // ===== DBVNTAX HANDLERS =====
+
+  const loadDbvntaxDocs = async () => {
     setDbLoading(true);
     try {
       const params = new URLSearchParams();
-      if (dbSearch) params.set("q", dbSearch);
+      if (dbSearch) params.set("search", dbSearch);
+      params.set("limit", "50");
       const res = await fetch(`/api/admin/dbvntax/list?${params}`, { headers });
-      if (res.ok) setDbDocs(await res.json());
-    } finally { setDbLoading(false); }
+      if (res.ok) {
+        const data = await res.json();
+        setDbDocs(data.items || data || []);
+        setSelected([]);
+      } else {
+        showMsg("error", "Không thể kết nối dbvntax");
+      }
+    } finally {
+      setDbLoading(false);
+    }
   };
 
-  useEffect(() => { if (activeTab === "dbvntax") loadDbDocs(); }, [activeTab]);
-
-  const handleDbImport = async () => {
-    if (selected.length === 0) { showMsg("error", "Chọn ít nhất 1 văn bản"); return; }
+  const handleImport = async () => {
+    if (!selected.length) return;
     setImporting(true);
     try {
       const res = await fetch("/api/admin/dbvntax/import", {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ doc_ids: selected, is_priority: importPriority }),
+        body: JSON.stringify({ ids: selected, is_priority: importPriority }),
       });
-      const data = await res.json();
-      if (res.ok) { showMsg("success", `Import ${data.imported || selected.length} văn bản thành công`); setSelected([]); loadDocs(); }
-      else showMsg("error", data.detail || "Lỗi import");
-    } finally { setImporting(false); }
+      if (res.ok) {
+        const data = await res.json();
+        showMsg("success", `Đã import ${data.imported?.length || selected.length} văn bản thành công`);
+        setSelected([]);
+        loadDocs();
+      } else {
+        const err = await res.json();
+        showMsg("error", err.detail || "Import thất bại");
+      }
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleCrawl = async () => {
+    if (!crawlUrl) return;
+    setCrawling(true);
+    try {
+      const res = await fetch("/api/admin/law-documents/crawl", {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ url: crawlUrl, is_priority: crawlPriority }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        showMsg("success", `Đã crawl: "${data.title}" (${data.doc_number || "chưa xác định số hiệu"})`);
+        setCrawlUrl("");
+        loadDocs();
+      } else {
+        const err = await res.json();
+        showMsg("error", err.detail || "Crawl thất bại");
+      }
+    } finally {
+      setCrawling(false);
+    }
   };
 
   const tabs = [
@@ -423,7 +465,7 @@ export default function AdminLawDocuments() {
           </div>
 
           <button
-            onClick={handleCrawl}
+            onClick={handleCrawlTab}
             disabled={crawling}
             className="w-full bg-[#028a39] text-white py-2.5 rounded-lg font-medium text-sm hover:bg-[#026d2d] disabled:opacity-50 flex items-center justify-center gap-2"
           >
@@ -438,80 +480,132 @@ export default function AdminLawDocuments() {
 
       {/* ===== TAB: DBVNTAX ===== */}
       {activeTab === "dbvntax" && (
-        <div>
-          <p className="text-sm text-gray-500 mb-4">Import văn bản từ database <strong>dbvntax</strong> (PostgreSQL nội bộ).</p>
-
-          <div className="flex gap-3 mb-4">
-            <div className="relative flex-1 max-w-sm">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <div className="space-y-6">
+          {/* Crawl from URL */}
+          <div className="bg-white border rounded-lg p-4">
+            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Globe className="w-4 h-4 text-[#028a39]" />
+              Crawl từ URL (thuvienphapluat.vn)
+            </h3>
+            <div className="flex gap-2">
               <input
-                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm"
-                placeholder="Tìm tiêu đề, số hiệu..."
-                value={dbSearch}
-                onChange={(e) => setDbSearch(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && loadDbDocs()}
+                type="url"
+                className="flex-1 border rounded px-3 py-2 text-sm"
+                placeholder="https://thuvienphapluat.vn/van-ban/..."
+                value={crawlUrl}
+                onChange={e => setCrawlUrl(e.target.value)}
               />
+              <label className="flex items-center gap-1 text-sm text-gray-600 whitespace-nowrap">
+                <input type="checkbox" checked={crawlPriority} onChange={e => setCrawlPriority(e.target.checked)} />
+                Ưu tiên
+              </label>
+              <button
+                onClick={handleCrawl}
+                disabled={crawling || !crawlUrl}
+                className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50 flex items-center gap-2"
+              >
+                {crawling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Globe className="w-4 h-4" />}
+                Crawl & Import
+              </button>
             </div>
-            <button onClick={loadDbDocs} className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm hover:bg-gray-50">
-              <RefreshCw size={14} className={dbLoading ? "animate-spin" : ""} />
-              Tìm kiếm
-            </button>
           </div>
 
-          {dbLoading ? (
-            <div className="text-center py-12 text-gray-400">Đang tải từ dbvntax...</div>
-          ) : dbDocs.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              <Database size={40} className="mx-auto mb-3 opacity-30" />
-              <p>Nhập từ khóa và nhấn Tìm kiếm</p>
+          {/* Import from dbvntax DB */}
+          <div className="bg-white border rounded-lg p-4">
+            <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+              <Database className="w-4 h-4 text-[#028a39]" />
+              Import từ dbvntax Database
+            </h3>
+            <div className="flex gap-2 mb-3">
+              <input
+                type="text"
+                className="flex-1 border rounded px-3 py-2 text-sm"
+                placeholder="Tìm kiếm văn bản... (ví dụ: Thông tư 80, Nghị định 123)"
+                value={dbSearch}
+                onChange={e => setDbSearch(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && loadDbvntaxDocs()}
+              />
+              <button
+                onClick={loadDbvntaxDocs}
+                disabled={dbLoading}
+                className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50"
+              >
+                {dbLoading ? "Đang tìm..." : "Tìm kiếm"}
+              </button>
             </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-sm text-gray-500">{dbDocs.length} văn bản — đã chọn: {selected.length}</span>
-                <button
-                  onClick={() => setSelected(selected.length === dbDocs.length ? [] : dbDocs.map((d) => d.id))}
-                  className="text-xs text-[#028a39] hover:underline"
-                >
-                  {selected.length === dbDocs.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
-                </button>
-              </div>
-              <div className="space-y-2 max-h-96 overflow-y-auto mb-4">
-                {dbDocs.map((doc) => (
-                  <label key={doc.id} className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:border-[#028a39]/40">
-                    <input
-                      type="checkbox"
-                      checked={selected.includes(doc.id)}
-                      onChange={(e) => setSelected(e.target.checked ? [...selected, doc.id] : selected.filter((id) => id !== doc.id))}
-                      className="mt-0.5 rounded accent-[#028a39]"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">{doc.doc_number || "—"}</span>
-                        <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{doc.doc_type || "Khác"}</span>
-                        {doc.issued_date && <span className="text-xs text-gray-400">{doc.issued_date}</span>}
-                      </div>
-                      <p className="text-sm text-gray-800 mt-0.5 truncate">{doc.title}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
 
-              <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
-                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                  <input type="checkbox" checked={importPriority} onChange={(e) => setImportPriority(e.target.checked)} className="rounded accent-[#028a39]" />
-                  Đánh dấu ưu tiên (dùng trong RAG)
-                </label>
-                <button
-                  onClick={handleDbImport}
-                  disabled={importing || selected.length === 0}
-                  className="ml-auto bg-[#028a39] text-white px-5 py-2 rounded-lg font-medium text-sm hover:bg-[#026d2d] disabled:opacity-50 flex items-center gap-2"
-                >
-                  {importing ? <><RefreshCw size={14} className="animate-spin" /> Đang import...</> : <><Database size={14} /> Import {selected.length > 0 ? selected.length : ""} văn bản</>}
-                </button>
-              </div>
-            </>
-          )}
+            {dbDocs.length > 0 && (
+              <>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">
+                    {selected.length > 0
+                      ? `Đã chọn ${selected.length} văn bản`
+                      : `${dbDocs.length} văn bản tìm thấy`}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <label className="flex items-center gap-1 text-sm">
+                      <input type="checkbox" checked={importPriority} onChange={e => setImportPriority(e.target.checked)} />
+                      Đánh dấu ưu tiên
+                    </label>
+                    <button
+                      onClick={handleImport}
+                      disabled={selected.length === 0 || importing}
+                      className="px-4 py-2 bg-[#028a39] text-white rounded text-sm hover:bg-[#016b2c] disabled:opacity-50"
+                    >
+                      {importing ? "Đang import..." : `Import ${selected.length} văn bản`}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="p-2 text-left w-8">
+                          <input
+                            type="checkbox"
+                            checked={selected.length === dbDocs.length && dbDocs.length > 0}
+                            onChange={e => setSelected(e.target.checked ? dbDocs.map(d => d.id) : [])}
+                          />
+                        </th>
+                        <th className="p-2 text-left">Số hiệu</th>
+                        <th className="p-2 text-left">Tên văn bản</th>
+                        <th className="p-2 text-left">Loại</th>
+                        <th className="p-2 text-left">Ngày ban hành</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {dbDocs.map(doc => (
+                        <tr key={doc.id} className="hover:bg-gray-50">
+                          <td className="p-2">
+                            <input
+                              type="checkbox"
+                              checked={selected.includes(doc.id)}
+                              onChange={e =>
+                                setSelected(e.target.checked
+                                  ? [...selected, doc.id]
+                                  : selected.filter(id => id !== doc.id))
+                              }
+                            />
+                          </td>
+                          <td className="p-2 font-mono text-xs">{doc.doc_number || "—"}</td>
+                          <td className="p-2 max-w-xs truncate" title={doc.title}>{doc.title}</td>
+                          <td className="p-2 text-gray-500">{doc.doc_type || "—"}</td>
+                          <td className="p-2 text-gray-500">{doc.issued_date || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {dbDocs.length === 0 && !dbLoading && (
+              <p className="text-sm text-gray-400 text-center py-4">
+                Nhập từ khóa và bấm Tìm kiếm để tìm văn bản từ database dbvntax
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

@@ -32,6 +32,7 @@ from backend.legalai.startup import run_legalai_startup
 from backend.writing.routes import router as writing_router
 from backend.routes.laws_admin import router as laws_admin_router
 from backend.routes.regulations import router as regulations_router
+from backend.routes.webhook import router as webhook_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -93,6 +94,9 @@ app.include_router(writing_router)
 # Laws admin + regulations routes
 app.include_router(laws_admin_router)
 app.include_router(regulations_router)
+
+# Webhook routes (dbvntax document sync)
+app.include_router(webhook_router)
 
 
 @app.get("/api/health")
