@@ -39,6 +39,11 @@ const SAC_THUE_OPTIONS = [
   { value: "FCT", label: "Nhà thầu nước ngoài" },
   { value: "TTDB", label: "Thuế TTDB" },
   { value: "XNK", label: "Thuế XNK / Hải quan" },
+  { value: "HKD", label: "Hộ Kinh Doanh" },
+  { value: "HOA_DON", label: "Hóa đơn" },
+  { value: "QLT", label: "Quản Lý Thuế" },
+  { value: "THUE_QT", label: "Thuế Quốc Tế" },
+  { value: "GDLK", label: "Giao dịch liên kết" },
 ];
 
 // dbvntax `loai` is stored as codes (Luat, ND, TT, ...). Map to display labels + colors.
@@ -103,12 +108,23 @@ export default function AdminLawDocuments() {
   const [importing, setImporting] = useState(false);
   const [dbTotal, setDbTotal] = useState(0);
   const [hideImported, setHideImported] = useState(true);
+  const [dbSortBy, setDbSortBy] = useState<string>("ngay_ban_hanh");
+  const [dbSortDir, setDbSortDir] = useState<"asc" | "desc">("desc");
 
-  // HTML preview modal state
+  // Sort state for "Danh sách" tab
+  const [listSortBy, setListSortBy] = useState<string>("created_at");
+  const [listSortDir, setListSortDir] = useState<"asc" | "desc">("desc");
+
+  // HTML preview modal state (dbvntax tab)
   const [previewDoc, setPreviewDoc] = useState<DbvntaxDoc | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string>("");
   const [previewLoading, setPreviewLoading] = useState(false);
   const [importingId, setImportingId] = useState<number | null>(null);
+
+  // Side-panel preview state ("Danh sách" tab)
+  const [listPreviewDoc, setListPreviewDoc] = useState<LawDoc | null>(null);
+  const [listPreviewHtml, setListPreviewHtml] = useState<string>("");
+  const [listPreviewLoading, setListPreviewLoading] = useState(false);
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
@@ -125,6 +141,8 @@ export default function AdminLawDocuments() {
       const params = new URLSearchParams();
       if (search) params.set("q", search);
       if (filterType) params.set("doc_type", filterType);
+      if (listSortBy) params.set("sort_by", listSortBy);
+      if (listSortDir) params.set("sort_dir", listSortDir);
       const res = await fetch(`/api/admin/law-documents?${params}`, { headers });
       if (res.ok) setDocs(await res.json());
     } finally {
@@ -133,9 +151,25 @@ export default function AdminLawDocuments() {
   };
 
   useEffect(() => { loadDocs(); }, []);
-  useEffect(() => { if (activeTab === "list") loadDocs(); }, [search, filterType]);
-  // Auto-load dbvntax docs when switching to that tab
+  useEffect(() => { if (activeTab === "list") loadDocs(); }, [search, filterType, listSortBy, listSortDir]);
+  // Auto-load dbvntax docs when switching to that tab, and re-load on sort change
   useEffect(() => { if (activeTab === "dbvntax" && dbDocs.length === 0) loadDbvntaxDocs(); }, [activeTab]);
+  useEffect(() => { if (activeTab === "dbvntax") loadDbvntaxDocs(); }, [dbSortBy, dbSortDir]);
+
+  // Sort helpers (shared by both tabs)
+  const toggleListSort = (field: string) => {
+    if (listSortBy === field) setListSortDir(listSortDir === "asc" ? "desc" : "asc");
+    else { setListSortBy(field); setListSortDir("desc"); }
+  };
+  const listSortIndicator = (field: string) =>
+    listSortBy === field ? (listSortDir === "asc" ? " ▲" : " ▼") : "";
+
+  const toggleDbSort = (field: string) => {
+    if (dbSortBy === field) setDbSortDir(dbSortDir === "asc" ? "desc" : "asc");
+    else { setDbSortBy(field); setDbSortDir("desc"); }
+  };
+  const dbSortIndicator = (field: string) =>
+    dbSortBy === field ? (dbSortDir === "asc" ? " ▲" : " ▼") : "";
 
   // AI Tag
   const aiTag = async (id: number) => {
@@ -223,6 +257,8 @@ export default function AdminLawDocuments() {
       if (dbSearch) params.set("search", dbSearch);
       if (dbSacThue) params.set("sac_thue", dbSacThue);
       if (dbDocType) params.set("doc_type", dbDocType);
+      if (dbSortBy) params.set("sort_by", dbSortBy);
+      if (dbSortDir) params.set("sort_dir", dbSortDir);
       params.set("limit", "100");
       const res = await fetch(`/api/admin/dbvntax/list?${params}`, { headers });
       if (res.ok) {
@@ -290,6 +326,35 @@ export default function AdminLawDocuments() {
   const closePreview = () => {
     setPreviewDoc(null);
     setPreviewHtml("");
+  };
+
+  // Side-panel preview for "Danh sách" tab — fetches GET /api/admin/law-documents/:id
+  const openListPreview = async (doc: LawDoc) => {
+    setListPreviewDoc(doc);
+    setListPreviewHtml("");
+    setListPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/admin/law-documents/${doc.id}`, { headers });
+      if (res.ok) {
+        const data = await res.json();
+        setListPreviewHtml(
+          data.content_html
+            || data.content_text
+            || "<p class='text-gray-400 italic'>Không có nội dung</p>"
+        );
+      } else {
+        setListPreviewHtml("<p class='text-red-400'>Không thể tải nội dung</p>");
+      }
+    } catch {
+      setListPreviewHtml("<p class='text-red-400'>Lỗi kết nối</p>");
+    } finally {
+      setListPreviewLoading(false);
+    }
+  };
+
+  const closeListPreview = () => {
+    setListPreviewDoc(null);
+    setListPreviewHtml("");
   };
 
   // Computed for dbvntax tab
@@ -360,6 +425,26 @@ export default function AdminLawDocuments() {
             </button>
           </div>
 
+          {/* Sort bar */}
+          <div className="flex items-center gap-2 mb-3 text-xs text-gray-500 flex-wrap">
+            <span>Sắp xếp:</span>
+            {([
+              { field: "created_at", label: "Ngày tạo" },
+              { field: "issued_date", label: "Ngày BH" },
+              { field: "title", label: "Tiêu đề" },
+              { field: "doc_number", label: "Số hiệu" },
+              { field: "doc_type", label: "Loại" },
+            ] as const).map(s => (
+              <button
+                key={s.field}
+                onClick={() => toggleListSort(s.field)}
+                className={`px-2 py-1 rounded border ${listSortBy === s.field ? "bg-[#028a39]/10 border-[#028a39] text-[#028a39]" : "border-gray-200 hover:bg-gray-50"}`}
+              >
+                {s.label}{listSortIndicator(s.field)}
+              </button>
+            ))}
+          </div>
+
           {loading ? (
             <div className="text-center py-12 text-gray-400">Đang tải...</div>
           ) : docs.length === 0 ? (
@@ -390,6 +475,9 @@ export default function AdminLawDocuments() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openListPreview(doc)} title="Xem nội dung" className="p-1.5 rounded hover:bg-[#028a39]/10 text-gray-400 hover:text-[#028a39]">
+                        <Eye size={14} />
+                      </button>
                       <button onClick={() => togglePriority(doc)} title="Toggle ưu tiên" className={`p-1.5 rounded hover:bg-gray-100 ${doc.is_priority ? "text-amber-500" : "text-gray-400"}`}>
                         <Star size={14} />
                       </button>
@@ -633,11 +721,19 @@ export default function AdminLawDocuments() {
                             onChange={e => setSelected(e.target.checked ? visibleDbDocs.filter(d => !d.is_imported).map(d => d.id) : [])}
                           />
                         </th>
-                        <th className="p-2 text-left">Số hiệu</th>
-                        <th className="p-2 text-left">Tên văn bản</th>
-                        <th className="p-2 text-left">Loại</th>
+                        <th className="p-2 text-left cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleDbSort("so_hieu")}>
+                          Số hiệu{dbSortIndicator("so_hieu")}
+                        </th>
+                        <th className="p-2 text-left cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleDbSort("ten")}>
+                          Tên văn bản{dbSortIndicator("ten")}
+                        </th>
+                        <th className="p-2 text-left cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleDbSort("loai")}>
+                          Loại{dbSortIndicator("loai")}
+                        </th>
                         <th className="p-2 text-left">Sắc thuế</th>
-                        <th className="p-2 text-left">Ngày BH</th>
+                        <th className="p-2 text-left cursor-pointer select-none hover:bg-gray-100" onClick={() => toggleDbSort("ngay_ban_hanh")}>
+                          Ngày BH{dbSortIndicator("ngay_ban_hanh")}
+                        </th>
                         <th className="p-2 text-left w-16"></th>
                       </tr>
                     </thead>
@@ -805,6 +901,43 @@ export default function AdminLawDocuments() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===== SIDE-PANEL PREVIEW (Danh sách tab) ===== */}
+      {listPreviewDoc && (
+        <div className="fixed inset-0 z-40 bg-black/30" onClick={closeListPreview} />
+      )}
+      {listPreviewDoc && (
+        <div
+          className="fixed inset-y-0 right-0 z-50 w-[60vw] min-w-[600px] max-w-[900px] bg-white shadow-2xl flex flex-col"
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b shrink-0">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-gray-500 font-mono truncate">{listPreviewDoc.doc_number || "—"}</p>
+              <p className="text-sm font-semibold text-gray-900 truncate">{listPreviewDoc.title}</p>
+            </div>
+            <button
+              onClick={closeListPreview}
+              className="p-1.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 shrink-0"
+              title="Đóng"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 bg-white">
+            {listPreviewLoading ? (
+              <div className="flex items-center justify-center h-full text-gray-400">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" /> Đang tải nội dung...
+              </div>
+            ) : (
+              <div
+                className="prose prose-sm max-w-none text-gray-800 law-document-content"
+                dangerouslySetInnerHTML={{ __html: listPreviewHtml }}
+              />
+            )}
           </div>
         </div>
       )}

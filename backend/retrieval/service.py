@@ -117,6 +117,11 @@ async def query_internal_db(query: str, db: AsyncSession, limit: int = 10) -> li
                 })
         except Exception as e:
             logger.warning(f"Priority tax_type query failed: {e}")
+            # Prevent InFailedSQLTransactionError on subsequent queries
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     # ── Full-text search using PostgreSQL tsvector (includes tax_types in index) ──
     seen_ids = {r["id"] for r in results}
@@ -164,6 +169,10 @@ async def query_internal_db(query: str, db: AsyncSession, limit: int = 10) -> li
                     seen_ids.add(row["id"])
         except Exception as e:
             logger.warning(f"FTS query on law_documents_v2 failed: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     # ── ILIKE fallback on title / doc_number / tax_types ──
     if len(results) < limit:
@@ -201,6 +210,10 @@ async def query_internal_db(query: str, db: AsyncSession, limit: int = 10) -> li
                     })
         except Exception as e:
             logger.warning(f"ILIKE query on law_documents_v2 failed: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
     logger.info(f"query_internal_db: {len(results)} results for '{query[:60]}'")
     return results

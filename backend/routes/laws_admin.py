@@ -68,11 +68,22 @@ class LawDocOut(BaseModel):
 
 # ── Law Documents CRUD ────────────────────────────────────────────────────────
 
+_LAW_DOC_SORT_COLUMNS = {
+    "title": "title",
+    "doc_number": "doc_number",
+    "doc_type": "doc_type",
+    "created_at": "created_at",
+    "issued_date": "issued_date",
+}
+
+
 @router.get("/api/admin/law-documents")
 async def list_law_documents(
     doc_type: Optional[str] = None,
     is_priority: Optional[bool] = None,
     search: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: Optional[str] = "desc",
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
@@ -91,6 +102,14 @@ async def list_law_documents(
         params["search"] = f"%{search}%"
 
     where = " AND ".join(conditions)
+
+    if sort_by and sort_by in _LAW_DOC_SORT_COLUMNS:
+        col = _LAW_DOC_SORT_COLUMNS[sort_by]
+        direction = "ASC" if (sort_dir or "").lower() == "asc" else "DESC"
+        order_clause = f"ORDER BY {col} {direction} NULLS LAST, created_at DESC"
+    else:
+        order_clause = "ORDER BY is_priority DESC, created_at DESC"
+
     result = await db.execute(
         text(f"""
             SELECT id, title, doc_number, doc_type, issuer, issued_date, effective_date,
@@ -98,7 +117,7 @@ async def list_law_documents(
                    LENGTH(COALESCE(content_text,'')) as content_length, created_at
             FROM taxlegal.law_documents_v2
             WHERE {where}
-            ORDER BY is_priority DESC, created_at DESC
+            {order_clause}
             LIMIT :limit OFFSET :skip
         """),
         params
@@ -369,11 +388,21 @@ async def _dbvntax_connect():
     return await asyncpg.connect(db_url)
 
 
+_DBVNTAX_SORT_COLUMNS = {
+    "so_hieu": "so_hieu",
+    "ten": "ten",
+    "loai": "loai",
+    "ngay_ban_hanh": "ngay_ban_hanh",
+}
+
+
 @router.get("/api/admin/dbvntax/list")
 async def list_dbvntax_documents(
     doc_type: Optional[str] = None,
     sac_thue: Optional[str] = None,
     search: Optional[str] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: Optional[str] = "desc",
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
@@ -413,6 +442,14 @@ async def list_dbvntax_documents(
 
         where = " AND ".join(conditions)
 
+        # ── ORDER BY (default: importance + ngay_ban_hanh; or user-selected) ─
+        if sort_by and sort_by in _DBVNTAX_SORT_COLUMNS:
+            col = _DBVNTAX_SORT_COLUMNS[sort_by]
+            direction = "ASC" if (sort_dir or "").lower() == "asc" else "DESC"
+            order_clause = f"ORDER BY {col} {direction} NULLS LAST, ngay_ban_hanh DESC NULLS LAST"
+        else:
+            order_clause = "ORDER BY importance ASC NULLS LAST, ngay_ban_hanh DESC NULLS LAST"
+
         # ── Paginate ────────────────────────────────────────────────────────
         params.append(limit)   # $N
         params.append(skip)    # $N+1
@@ -435,7 +472,7 @@ async def list_dbvntax_documents(
                 link_tvpl
             FROM documents
             WHERE {where}
-            ORDER BY importance ASC NULLS LAST, ngay_ban_hanh DESC NULLS LAST
+            {order_clause}
             LIMIT ${limit_idx} OFFSET ${offset_idx}
         """
         rows = await conn.fetch(data_query, *params)

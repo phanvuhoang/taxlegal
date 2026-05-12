@@ -4,7 +4,7 @@ All tables live in the 'taxlegal' schema on the shared VPS PostgreSQL instance.
 """
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Text, Boolean, DateTime, Float,
+    Column, Integer, SmallInteger, String, Text, Boolean, DateTime, Float,
     ForeignKey, ARRAY, func, Enum as SAEnum
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -310,6 +310,34 @@ class LawDocument(Base):
     link_tvpl = Column(Text)
     dbvntax_id = Column(Integer)  # reference to dbvntax if synced
     source = Column(String(50), default="manual")  # manual|dbvntax_sync
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class LawDocumentV2(Base):
+    __tablename__ = "law_documents_v2"
+    __table_args__ = {"schema": "taxlegal"}
+
+    id = Column(Integer, primary_key=True)
+    title = Column(Text, nullable=False)
+    doc_number = Column(String(200))
+    doc_type = Column(String(50))
+    issuer = Column(String(200))
+    issued_date = Column(String(30))
+    effective_date = Column(String(30))
+    source_url = Column(Text)
+    tags = Column(ARRAY(Text), default=list)
+    tax_types = Column(ARRAY(Text), default=list)
+    is_priority = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=True)
+    ai_tagged = Column(Boolean, default=False)
+    imported_from = Column(String(50))
+    dbvntax_id = Column(Integer)
+    content_html = Column(Text)
+    content_text = Column(Text)
+    effective_status = Column(String(50), default="con_hieu_luc")
+    importance = Column(SmallInteger, default=4)
+    created_by = Column(Integer, ForeignKey("taxlegal.users.id"))
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

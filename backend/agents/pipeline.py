@@ -12,7 +12,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, text as sa_text
 
 from backend.models import Matter, PipelineStep, ResearchChunk, MatterStatus, BotVariant, PipelineTemplate, Skill
 from backend.ai_provider import call_ai
@@ -702,10 +702,31 @@ async def execute_pipeline_step(
 
     except Exception as e:
         logger.error(f"Pipeline step {step_number} failed for matter {matter_id}: {e}")
-        step.status = "failed"
-        step.error_message = str(e)
-        matter.status = MatterStatus.failed.value
-        await db.commit()
+        # If the transaction was aborted (e.g. by a failed SQL query), the ORM
+        # session can no longer execute statements. Roll back first, then write
+        # the failure status with raw SQL on a fresh transaction so the matter
+        # doesn't get stuck in "running" / "draft" state.
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        error_msg = str(e)[:500]
+        try:
+            await db.execute(
+                sa_text(
+                    "UPDATE taxlegal.pipeline_steps "
+                    "SET status='failed', error_message=:err "
+                    "WHERE matter_id=:mid AND step_number=:sn"
+                ),
+                {"err": error_msg, "mid": matter_id, "sn": step_number},
+            )
+            await db.execute(
+                sa_text("UPDATE taxlegal.matters SET status=:st WHERE id=:mid"),
+                {"st": MatterStatus.failed.value, "mid": matter_id},
+            )
+            await db.commit()
+        except Exception as commit_err:
+            logger.error(f"Failed to persist failure status for matter {matter_id}: {commit_err}")
         raise
 
 
