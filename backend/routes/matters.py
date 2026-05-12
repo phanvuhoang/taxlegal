@@ -1,7 +1,6 @@
 """
 Matters API — CRUD for client advisory requests.
 """
-import asyncio
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -98,7 +97,9 @@ async def create_matter(
     await db.refresh(matter)
 
     # Auto-start step 1 (Intake) in background
-    asyncio.create_task(_run_step_bg(matter.id, 1, req.model_override))
+    background_tasks.add_task(
+        _run_step_bg, matter.id, 1, req.model_override
+    )
 
     return {"id": matter.id, "status": "intake_started", "message": "Matter created. Intake Enhancer đang chạy..."}
 
@@ -201,7 +202,7 @@ async def approve_step(
 
     next_step = step_number + 1
     if next_step <= 7:
-        asyncio.create_task(_run_step_bg(matter_id, next_step, model_override))
+        background_tasks.add_task(_run_step_bg, matter_id, next_step, model_override)
         return {"message": f"Step {step_number} approved. Step {next_step} starting..."}
     return {"message": "Pipeline completed!"}
 
@@ -218,7 +219,7 @@ async def run_step_manual(
     """Manually trigger a specific step (admin/retry)."""
     await _get_matter_or_404(db, matter_id, current_user)
     model_override = body.get("model_override")
-    asyncio.create_task(_run_step_bg(matter_id, step_number, model_override))
+    background_tasks.add_task(_run_step_bg, matter_id, step_number, model_override)
     return {"message": f"Step {step_number} triggered"}
 
 
