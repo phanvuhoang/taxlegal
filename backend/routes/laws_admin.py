@@ -485,12 +485,12 @@ async def list_dbvntax_documents(
         )
         total = cnt[0] if cnt else len(rows)
 
-        # Mark already-imported docs by querying taxlegal.law_documents
+        # Mark already-imported docs by querying taxlegal.law_documents_v2
         dbvntax_ids = [r["id"] for r in rows]
         imported_set: set = set()
         if dbvntax_ids:
             imp_result = await db.execute(
-                text("SELECT dbvntax_id FROM taxlegal.law_documents WHERE dbvntax_id = ANY(:ids)"),
+                text("SELECT dbvntax_id FROM taxlegal.law_documents_v2 WHERE dbvntax_id = ANY(:ids)"),
                 {"ids": dbvntax_ids}
             )
             imported_set = {row[0] for row in imp_result.fetchall() if row[0] is not None}
@@ -586,9 +586,9 @@ async def import_from_dbvntax(
     for row in rows:
         dbvntax_id = row.get("id")
 
-        # Skip if already imported (no unique constraint, so check explicitly)
+        # Skip if already imported (check law_documents_v2)
         existing = await db.execute(
-            text("SELECT id FROM taxlegal.law_documents WHERE dbvntax_id = :dbvntax_id"),
+            text("SELECT id FROM taxlegal.law_documents_v2 WHERE dbvntax_id = :dbvntax_id"),
             {"dbvntax_id": dbvntax_id}
         )
         if existing.fetchone():
@@ -598,40 +598,42 @@ async def import_from_dbvntax(
         content_html = row.get("noi_dung") or ""
         content_text = re.sub(r'<[^>]+>', ' ', content_html)
         content_text = re.sub(r'\s+', ' ', content_text).strip()
-        practice_areas = list(row.get("sac_thue") or [])
+        tax_types = list(row.get("sac_thue") or [])
 
         try:
             res = await db.execute(
                 text("""
-                    INSERT INTO taxlegal.law_documents
-                        (ten, so_hieu, loai, co_quan, ngay_ban_hanh,
-                         hieu_luc_tu, tinh_trang,
-                         practice_areas, content_text, link_tvpl,
-                         dbvntax_id, source)
+                    INSERT INTO taxlegal.law_documents_v2
+                        (title, doc_number, doc_type, issuer,
+                         issued_date, effective_date, effective_status,
+                         tax_types, content_html, content_text, source_url,
+                         dbvntax_id, imported_from, is_priority)
                     VALUES
-                        (:ten, :so_hieu, :loai, :co_quan, :ngay_ban_hanh,
-                         :hieu_luc_tu, :tinh_trang,
-                         :practice_areas, :content_text, :link_tvpl,
-                         :dbvntax_id, 'dbvntax_sync')
-                    RETURNING id, ten
+                        (:title, :doc_number, :doc_type, :issuer,
+                         :issued_date, :effective_date, :effective_status,
+                         :tax_types, :content_html, :content_text, :source_url,
+                         :dbvntax_id, 'dbvntax', :is_priority)
+                    RETURNING id, title
                 """),
                 {
-                    "ten": row.get("ten") or "Untitled",
-                    "so_hieu": row.get("so_hieu"),
-                    "loai": row.get("loai"),
-                    "co_quan": row.get("co_quan"),
-                    "ngay_ban_hanh": row.get("ngay_ban_hanh"),
-                    "hieu_luc_tu": row.get("hieu_luc_tu"),
-                    "tinh_trang": row.get("tinh_trang") or "con_hieu_luc",
-                    "practice_areas": practice_areas,
+                    "title": row.get("ten") or "Untitled",
+                    "doc_number": row.get("so_hieu"),
+                    "doc_type": row.get("loai"),
+                    "issuer": row.get("co_quan"),
+                    "issued_date": row.get("ngay_ban_hanh"),
+                    "effective_date": row.get("hieu_luc_tu"),
+                    "effective_status": row.get("tinh_trang") or "con_hieu_luc",
+                    "tax_types": tax_types,
+                    "content_html": content_html,
                     "content_text": content_text[:100000],
-                    "link_tvpl": row.get("link_tvpl"),
+                    "source_url": row.get("link_tvpl"),
                     "dbvntax_id": dbvntax_id,
+                    "is_priority": body.get("is_priority", False),
                 }
             )
             inserted = res.fetchone()
             if inserted:
-                imported.append({"id": inserted.id, "title": inserted.ten})
+                imported.append({"id": inserted.id, "title": inserted.title})
         except Exception as e:
             logger.warning(f"Failed to import doc {dbvntax_id}: {e}")
             continue
