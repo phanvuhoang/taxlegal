@@ -436,14 +436,21 @@ class RetrievalService:
             total_results=len(db_results) + len(web_results),
         )
 
-        # Step 6: Log retrieval query to DB
-        await self._log_retrieval_query(
-            db=db,
-            query=query,
-            result=result,
-            case_id=case_id,
-            agent_run_id=agent_run_id,
-        )
+        # Step 6: Log retrieval query to DB (fire-and-forget, non-fatal)
+        try:
+            await self._log_retrieval_query(
+                db=db,
+                query=query,
+                result=result,
+                case_id=case_id,
+                agent_run_id=agent_run_id,
+            )
+        except Exception as e:
+            logger.warning(f"_log_retrieval_query failed: {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
 
         return result
 

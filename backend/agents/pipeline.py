@@ -701,7 +701,7 @@ async def execute_pipeline_step(
         return step
 
     except Exception as e:
-        logger.error(f"Pipeline step {step_number} failed for matter {matter_id}: {e}")
+        logger.error(f"Pipeline step {step_number} failed for matter {matter_id}: {e}", exc_info=True)
         # If the transaction was aborted (e.g. by a failed SQL query), the ORM
         # session can no longer execute statements. Roll back first, then write
         # the failure status with raw SQL on a fresh transaction so the matter
