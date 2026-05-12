@@ -147,17 +147,52 @@ const openListPreview = async (doc: LawDoc) => {
 };
 ```
 
-**Reuse the existing preview modal** — the component already has one for dbvntax docs. Make it generic or create a second one for list docs, using the same Modal pattern:
+**Side panel approach (preferred over modal):**
+- Slide-in panel from right, full-height, width ~60vw (or 800px)
+- Rendered **full HTML content** (toàn văn) in an iframe or shadow-DOM container
+- Header: document number + title + close button
+- Stays open while browsing the list (non-blocking)
+- Also add a "Mở tab mới" link that opens `/api/admin/law-documents/{id}/view` in a separate browser tab
 
+**Side panel JSX pattern:**
 ```tsx
-{/* Preview Modal for list documents */}
+{/* Side Panel for toàn văn preview */}
 {listPreviewDoc && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeListPreview}>
-    <div className="bg-white rounded-xl w-full max-w-4xl max-h-[85vh] flex flex-col mx-4" onClick={e => e.stopPropagation()}>
-      {/* Header, Body, Footer — same pattern as dbvntax preview */}
+  <div className="fixed inset-y-0 right-0 z-50 w-[60vw] min-w-[600px] max-w-[900px] bg-white shadow-2xl flex flex-col transform transition-transform" onClick={e => e.stopPropagation()}>
+    {/* Header bar */}
+    <div className="flex items-center justify-between px-4 py-3 border-b shrink-0">
+      <div className="min-w-0">
+        <p className="text-xs text-gray-500 font-mono">{listPreviewDoc.doc_number}</p>
+        <p className="text-sm font-semibold text-gray-900 truncate">{listPreviewDoc.title}</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <a href={`/api/admin/law-documents/${listPreviewDoc.id}/view`} target="_blank" className="text-xs text-[#028a39] hover:underline">Mở tab mới ↗</a>
+        <button onClick={closeListPreview} className="p-1.5 rounded hover:bg-gray-100 text-gray-400"><X size={18}/></button>
+      </div>
+    </div>
+    {/* Content: rendered full HTML */}
+    <div className="flex-1 overflow-y-auto p-4 bg-white">
+      {listPreviewLoading ? (
+        <div className="flex items-center justify-center h-full text-gray-400"><Loader2 className="animate-spin"/></div>
+      ) : (
+        <div className="prose prose-sm max-w-none law-document-content" dangerouslySetInnerHTML={{ __html: listPreviewHtml }} />
+      )}
     </div>
   </div>
 )}
+{/* Backdrop */}
+{listPreviewDoc && <div className="fixed inset-0 z-40 bg-black/30" onClick={closeListPreview} />}
+```
+
+**Backdrop overlay** (z-40) behind the side panel to dim the rest of the page.
+
+**Same side panel for dbvntax tab** — unify into one `<DocumentSidePanel>` reusable component used by both tabs.
+
+**CSS for law-document-content** — add to `index.css`:
+```css
+.law-document-content table { border-collapse: collapse; width: 100%; }
+.law-document-content td, .law-document-content th { border: 1px solid #d1d5db; padding: 6px 10px; }
+.law-document-content img { max-width: 100%; height: auto; }
 ```
 
 ### 4b: Add sort to "Danh sách" tab
@@ -205,7 +240,9 @@ Frontend: Add sort state + clickable headers + sort indicators (same pattern as 
 | Table headers: dbvntax | Make clickable, show sort arrows |
 | Table headers: list | Make clickable, show sort arrows |
 | List row actions | Add Eye button for preview |
-| List preview modal | Copy from dbvntax preview modal pattern |
+| List preview | Eye button → side panel slide-in từ phải, hiển thị toàn văn HTML + link "Mở tab mới" |
+| `DocumentSidePanel` | Reusable component dùng chung cho cả tab dbvntax và tab Danh sách |
+| CSS | `.law-document-content` styles for rendered HTML tables, images |
 | `loadDbvntaxDocs()` | Append sort params to API call |
 | `loadDocs()` (list) | Append sort params to API call |
 
@@ -215,5 +252,5 @@ Frontend: Add sort state + clickable headers + sort indicators (same pattern as 
 
 1. **Sort dbvntax**: Click column headers → list re-sorts; arrow indicator updates
 2. **Sort list**: Same behavior
-3. **Preview list doc**: Click Eye button → modal with HTML content
-4. **Import → list**: Import from dbvntax → doc appears in list tab → can preview
+3. **Preview list doc**: Click Eye button → side panel slides in from right with full rendered HTML → can scroll toàn văn → "Mở tab mới" opens in separate browser tab
+4. **Import → list**: Import from dbvntax → doc appears in list tab → can preview via side panel
