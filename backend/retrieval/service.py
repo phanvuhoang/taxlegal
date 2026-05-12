@@ -8,6 +8,7 @@ CRITICAL BUSINESS RULE:
 4. ALWAYS record source_type, trust_level, citation, retrieval_method
 5. If coverage is insufficient, return "insufficient source coverage"
 """
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -463,9 +464,9 @@ class RetrievalService:
                     agent_run_id,
                     query_text,
                     db_results_count,
-                    web_results_count,
                     used_fallback,
                     insufficient_coverage,
+                    results_summary,
                     created_at
                 ) VALUES (
                     :id,
@@ -473,9 +474,9 @@ class RetrievalService:
                     :agent_run_id,
                     :query_text,
                     :db_results_count,
-                    :web_results_count,
                     :used_fallback,
                     :insufficient_coverage,
+                    :results_summary,
                     :created_at
                 )
                 ON CONFLICT DO NOTHING
@@ -486,12 +487,19 @@ class RetrievalService:
                 "agent_run_id": str(agent_run_id) if agent_run_id else None,
                 "query_text": query[:500],
                 "db_results_count": len(result.db_results),
-                "web_results_count": len(result.web_results),
                 "used_fallback": result.used_fallback,
                 "insufficient_coverage": result.insufficient_coverage,
+                "results_summary": json.dumps({
+                    "web_results_count": len(result.web_results),
+                    "total_results": result.total_results,
+                }, ensure_ascii=False),
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
             await db.flush()
         except Exception as e:
-            # Non-fatal — logging failure must not break retrieval
+            # Non-fatal — but MUST rollback to prevent InFailedSQLTransactionError
             logger.debug(f"Could not log retrieval_query (table may not exist yet): {e}")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
