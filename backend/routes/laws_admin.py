@@ -356,12 +356,8 @@ Chỉ trả về JSON thuần túy."""
 #   id, so_hieu, ten, loai, co_quan, ngay_ban_hanh, hieu_luc_tu, het_hieu_luc_tu,
 #   tinh_trang, noi_dung (HTML full text), link_tvpl, sac_thue TEXT[],
 #   importance SMALLINT, is_anchor BOOLEAN
-# Legal doc types: Luật, Nghị định, Thông tư, Thông tư liên tịch,
-#                  Văn bản hợp nhất, Pháp lệnh, Nghị quyết (NOT: Công văn, Thông báo)
-_DBVNTAX_LEGAL_TYPES = [
-    'Luật', 'Nghị định', 'Thông tư', 'Thông tư liên tịch',
-    'Văn bản hợp nhất', 'Pháp lệnh', 'Nghị quyết', 'Quyết định'
-]
+# `loai` values are CODES, not Vietnamese names.
+_DBVNTAX_LEGAL_TYPES = ['Luat', 'ND', 'TT', 'VBHN', 'QD', 'NQ', 'Khac']
 
 
 async def _dbvntax_connect():
@@ -380,12 +376,14 @@ async def list_dbvntax_documents(
     search: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
+    db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
     """
     List tax law documents from dbvntax — only legal docs (not Công văn/Thông báo).
-    Supports filtering by doc_type, sac_thue (tax type), and text search.
-    Always returns results (no search term required — default loads all legal docs).
+    Supports filtering by doc_type (codes: Luat/ND/TT/VBHN/QD/NQ/Khac),
+    sac_thue (tax type), and text search. Marks `is_imported` for docs already
+    present in taxlegal.law_documents.
     """
     conn = await _dbvntax_connect()
     try:
@@ -396,10 +394,10 @@ async def list_dbvntax_documents(
         conditions = [f"loai = ANY(ARRAY[{types_literal}]::varchar[])"]
         params: list = []
 
-        # 2. doc_type filter — ILIKE against loai column
-        if doc_type:
-            params.append(f"%{doc_type}%")
-            conditions.append(f"loai ILIKE ${len(params)}")
+        # 2. doc_type filter — exact match against loai code (Luat/ND/TT/...)
+        if doc_type and doc_type in _DBVNTAX_LEGAL_TYPES:
+            params.append(doc_type)
+            conditions.append(f"loai = ${len(params)}")
 
         # 3. sac_thue filter — varchar[] overlap operator
         #    sac_thue column is character varying[] in dbvntax, so cast to varchar[]
@@ -450,12 +448,23 @@ async def list_dbvntax_documents(
         )
         total = cnt[0] if cnt else len(rows)
 
+        # Mark already-imported docs by querying taxlegal.law_documents
+        dbvntax_ids = [r["id"] for r in rows]
+        imported_set: set = set()
+        if dbvntax_ids:
+            imp_result = await db.execute(
+                text("SELECT dbvntax_id FROM taxlegal.law_documents WHERE dbvntax_id = ANY(:ids)"),
+                {"ids": dbvntax_ids}
+            )
+            imported_set = {row[0] for row in imp_result.fetchall() if row[0] is not None}
+
         items = []
         for r in rows:
             d = dict(r)
             # asyncpg returns varchar[] as a Python list — ensure it is serialisable
             st = d.get("sac_thue")
             d["sac_thue"] = list(st) if st else []
+            d["is_imported"] = d["id"] in imported_set
             items.append(d)
 
         return {"items": items, "total": total}
@@ -510,15 +519,14 @@ async def preview_dbvntax_document(
 async def import_from_dbvntax(
     body: dict,
     db: AsyncSession = Depends(get_db),
-    admin: User = Depends(require_admin),
+    _admin: User = Depends(require_admin),
 ):
     """
-    Import selected documents from dbvntax into taxlegal.law_documents_v2.
-    Copies sac_thue → tax_types, is_anchor → is_priority.
-    body: {"ids": [1, 2, 3], "is_priority": false}
+    Import selected documents from dbvntax into taxlegal.law_documents.
+    Copies sac_thue → practice_areas. Skips docs already imported (dbvntax_id match).
+    body: {"ids": [1, 2, 3]}
     """
     ids = body.get("ids", [])
-    is_priority = body.get("is_priority", False)
     if not ids:
         raise HTTPException(status_code=400, detail="No IDs provided")
 
@@ -528,7 +536,7 @@ async def import_from_dbvntax(
         rows = await conn.fetch(
             f"""SELECT id, so_hieu, ten, loai, co_quan,
                        ngay_ban_hanh::text, hieu_luc_tu::text, tinh_trang,
-                       noi_dung, link_tvpl, sac_thue, importance, is_anchor
+                       noi_dung, link_tvpl, sac_thue
                 FROM documents WHERE id = ANY(ARRAY[{id_placeholders}]::integer[])""",
             *ids
         )
@@ -536,84 +544,63 @@ async def import_from_dbvntax(
         await conn.close()
 
     imported = []
+    skipped = []
     import re
     for row in rows:
+        dbvntax_id = row.get("id")
+
+        # Skip if already imported (no unique constraint, so check explicitly)
+        existing = await db.execute(
+            text("SELECT id FROM taxlegal.law_documents WHERE dbvntax_id = :dbvntax_id"),
+            {"dbvntax_id": dbvntax_id}
+        )
+        if existing.fetchone():
+            skipped.append(dbvntax_id)
+            continue
+
         content_html = row.get("noi_dung") or ""
         content_text = re.sub(r'<[^>]+>', ' ', content_html)
         content_text = re.sub(r'\s+', ' ', content_text).strip()
-
-        # Map loai → doc_type slug
-        raw_type = (row.get("loai") or "").lower()
-        if "luật" in raw_type:
-            doc_type = "luat"
-        elif "nghị định" in raw_type:
-            doc_type = "nghi_dinh"
-        elif "thông tư" in raw_type:
-            doc_type = "thong_tu"
-        elif "hợp nhất" in raw_type:
-            doc_type = "van_ban_hop_nhat"
-        elif "pháp lệnh" in raw_type:
-            doc_type = "phap_lenh"
-        elif "nghị quyết" in raw_type:
-            doc_type = "nghi_quyet"
-        elif "quyết định" in raw_type:
-            doc_type = "quyet_dinh"
-        else:
-            doc_type = "van_ban_khac"
-
-        # sac_thue → tax_types
-        sac_thue = list(row.get("sac_thue") or [])
-        # is_anchor OR is_priority param
-        doc_is_priority = is_priority or bool(row.get("is_anchor"))
-        # importance: 1=Luật, 2=NĐ, 3=TT, etc.
-        importance = row.get("importance") or (
-            1 if doc_type == "luat" else
-            2 if doc_type == "nghi_dinh" else
-            3 if doc_type in ("thong_tu", "van_ban_hop_nhat") else 4
-        )
+        practice_areas = list(row.get("sac_thue") or [])
 
         try:
             res = await db.execute(
                 text("""
-                    INSERT INTO taxlegal.law_documents_v2
-                        (title, doc_number, doc_type, issuer, issued_date,
-                         content_html, content_text, is_priority, importance,
-                         tax_types, link_tvpl, effective_status,
-                         imported_from, dbvntax_id, created_by)
+                    INSERT INTO taxlegal.law_documents
+                        (ten, so_hieu, loai, co_quan, ngay_ban_hanh,
+                         hieu_luc_tu, tinh_trang,
+                         practice_areas, content_text, link_tvpl,
+                         dbvntax_id, source)
                     VALUES
-                        (:title, :doc_number, :doc_type, :issuer, :issued_date,
-                         :content_html, :content_text, :is_priority, :importance,
-                         :tax_types, :link_tvpl, :effective_status,
-                         'dbvntax', :dbvntax_id, :created_by)
-                    ON CONFLICT DO NOTHING
-                    RETURNING id, title
+                        (:ten, :so_hieu, :loai, :co_quan, :ngay_ban_hanh,
+                         :hieu_luc_tu, :tinh_trang,
+                         :practice_areas, :content_text, :link_tvpl,
+                         :dbvntax_id, 'dbvntax_sync')
+                    RETURNING id, ten
                 """),
                 {
-                    "title": row.get("ten") or "Untitled",
-                    "doc_number": row.get("so_hieu"),
-                    "doc_type": doc_type,
-                    "issuer": row.get("co_quan"),
-                    "issued_date": row.get("ngay_ban_hanh"),
-                    "content_html": content_html,
+                    "ten": row.get("ten") or "Untitled",
+                    "so_hieu": row.get("so_hieu"),
+                    "loai": row.get("loai"),
+                    "co_quan": row.get("co_quan"),
+                    "ngay_ban_hanh": row.get("ngay_ban_hanh"),
+                    "hieu_luc_tu": row.get("hieu_luc_tu"),
+                    "tinh_trang": row.get("tinh_trang") or "con_hieu_luc",
+                    "practice_areas": practice_areas,
                     "content_text": content_text[:100000],
-                    "is_priority": doc_is_priority,
-                    "importance": importance,
-                    "tax_types": sac_thue,
                     "link_tvpl": row.get("link_tvpl"),
-                    "effective_status": row.get("tinh_trang") or "con_hieu_luc",
-                    "dbvntax_id": row.get("id"),
-                    "created_by": admin.id,
+                    "dbvntax_id": dbvntax_id,
                 }
             )
             inserted = res.fetchone()
             if inserted:
-                imported.append({"id": inserted.id, "title": inserted.title})
+                imported.append({"id": inserted.id, "title": inserted.ten})
         except Exception as e:
-            logger.warning(f"Failed to import doc {row.get('id')}: {e}")
+            logger.warning(f"Failed to import doc {dbvntax_id}: {e}")
             continue
 
     await db.commit()
-    return {"imported": len(imported), "items": imported}
+    return {"imported": len(imported), "skipped": len(skipped), "items": imported}
 
 
 # ── Public API: Search law documents (for regulation picker) ─────────────────

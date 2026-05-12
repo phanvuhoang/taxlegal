@@ -27,6 +27,7 @@ interface DbvntaxDoc {
   importance: number;
   is_anchor: boolean;
   link_tvpl: string | null;
+  is_imported?: boolean;
 }
 
 const DOC_TYPES = ["Luật", "Nghị định", "Thông tư", "Quyết định", "Công văn", "Nghị quyết", "Thông báo", "Khác"];
@@ -40,15 +41,29 @@ const SAC_THUE_OPTIONS = [
   { value: "XNK", label: "Thuế XNK / Hải quan" },
 ];
 
+// dbvntax `loai` is stored as codes (Luat, ND, TT, ...). Map to display labels + colors.
+const DBVNTAX_LOAI_OPTIONS = [
+  { value: "Luat", label: "Luật" },
+  { value: "ND", label: "Nghị định" },
+  { value: "TT", label: "Thông tư" },
+  { value: "VBHN", label: "Văn bản hợp nhất" },
+  { value: "NQ", label: "Nghị quyết" },
+  { value: "QD", label: "Quyết định" },
+  { value: "Khac", label: "Khác" },
+];
+
+const LOAI_LABELS: Record<string, string> = Object.fromEntries(
+  DBVNTAX_LOAI_OPTIONS.map(o => [o.value, o.label])
+);
+
 const LOAI_COLORS: Record<string, string> = {
-  "Luật": "bg-indigo-50 text-indigo-700",
-  "Nghị định": "bg-blue-50 text-blue-700",
-  "Thông tư": "bg-cyan-50 text-cyan-700",
-  "Thông tư liên tịch": "bg-teal-50 text-teal-700",
-  "Văn bản hợp nhất": "bg-purple-50 text-purple-700",
-  "Pháp lệnh": "bg-orange-50 text-orange-700",
-  "Nghị quyết": "bg-amber-50 text-amber-700",
-  "Quyết định": "bg-green-50 text-green-700",
+  "Luat": "bg-indigo-50 text-indigo-700",
+  "ND": "bg-blue-50 text-blue-700",
+  "TT": "bg-cyan-50 text-cyan-700",
+  "VBHN": "bg-purple-50 text-purple-700",
+  "NQ": "bg-amber-50 text-amber-700",
+  "QD": "bg-green-50 text-green-700",
+  "Khac": "bg-gray-100 text-gray-600",
 };
 
 export default function AdminLawDocuments() {
@@ -87,6 +102,7 @@ export default function AdminLawDocuments() {
   const [importPriority, setImportPriority] = useState(false);
   const [importing, setImporting] = useState(false);
   const [dbTotal, setDbTotal] = useState(0);
+  const [hideImported, setHideImported] = useState(true);
 
   // HTML preview modal state
   const [previewDoc, setPreviewDoc] = useState<DbvntaxDoc | null>(null);
@@ -236,9 +252,11 @@ export default function AdminLawDocuments() {
       });
       if (res.ok) {
         const data = await res.json();
-        showMsg("success", `Đã import ${data.imported} văn bản thành công`);
+        const skippedNote = data.skipped ? ` (${data.skipped} đã import từ trước)` : "";
+        showMsg("success", `Đã import ${data.imported} văn bản${skippedNote}`);
         if (!ids) setSelected([]);
         loadDocs();
+        loadDbvntaxDocs();
       } else {
         const err = await res.json();
         showMsg("error", err.detail || "Import thất bại");
@@ -273,6 +291,10 @@ export default function AdminLawDocuments() {
     setPreviewDoc(null);
     setPreviewHtml("");
   };
+
+  // Computed for dbvntax tab
+  const visibleDbDocs = dbDocs.filter(d => !hideImported || !d.is_imported);
+  const hiddenImportedCount = dbDocs.filter(d => d.is_imported).length;
 
   const tabs = [
     { id: "list", label: "Danh sách", icon: FileText },
@@ -549,13 +571,9 @@ export default function AdminLawDocuments() {
                 onChange={e => setDbDocType(e.target.value)}
               >
                 <option value="">Tất cả loại</option>
-                <option value="Luật">Luật</option>
-                <option value="Nghị định">Nghị định</option>
-                <option value="Thông tư">Thông tư</option>
-                <option value="Thông tư liên tịch">Thông tư liên tịch</option>
-                <option value="Văn bản hợp nhất">Văn bản hợp nhất</option>
-                <option value="Nghị quyết">Nghị quyết</option>
-                <option value="Quyết định">Quyết định</option>
+                {DBVNTAX_LOAI_OPTIONS.map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
               </select>
               <select
                 className="border rounded px-3 py-2 text-sm"
@@ -582,9 +600,13 @@ export default function AdminLawDocuments() {
                   <span className="text-sm text-gray-600">
                     {selected.length > 0
                       ? `Đã chọn ${selected.length} văn bản`
-                      : `${dbDocs.length} / ${dbTotal} văn bản`}
+                      : `${visibleDbDocs.length} / ${dbTotal} văn bản${hiddenImportedCount > 0 && hideImported ? ` (ẩn ${hiddenImportedCount} đã import)` : ""}`}
                   </span>
                   <div className="flex items-center gap-3 flex-wrap">
+                    <label className="flex items-center gap-1 text-sm">
+                      <input type="checkbox" checked={hideImported} onChange={e => setHideImported(e.target.checked)} />
+                      Ẩn đã import
+                    </label>
                     <label className="flex items-center gap-1 text-sm">
                       <input type="checkbox" checked={importPriority} onChange={e => setImportPriority(e.target.checked)} />
                       Đánh dấu ưu tiên
@@ -607,8 +629,8 @@ export default function AdminLawDocuments() {
                         <th className="p-2 text-left w-8">
                           <input
                             type="checkbox"
-                            checked={selected.length === dbDocs.length && dbDocs.length > 0}
-                            onChange={e => setSelected(e.target.checked ? dbDocs.map(d => d.id) : [])}
+                            checked={selected.length > 0 && selected.length === visibleDbDocs.filter(d => !d.is_imported).length}
+                            onChange={e => setSelected(e.target.checked ? visibleDbDocs.filter(d => !d.is_imported).map(d => d.id) : [])}
                           />
                         </th>
                         <th className="p-2 text-left">Số hiệu</th>
@@ -620,15 +642,16 @@ export default function AdminLawDocuments() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {dbDocs.map(doc => (
+                      {visibleDbDocs.map(doc => (
                         <tr
                           key={doc.id}
-                          className="hover:bg-gray-50 cursor-pointer"
+                          className={`hover:bg-gray-50 cursor-pointer ${doc.is_imported ? "bg-gray-50" : ""}`}
                           onClick={() => openPreview(doc)}
                         >
                           <td className="p-2" onClick={e => e.stopPropagation()}>
                             <input
                               type="checkbox"
+                              disabled={doc.is_imported}
                               checked={selected.includes(doc.id)}
                               onChange={e =>
                                 setSelected(e.target.checked
@@ -637,13 +660,18 @@ export default function AdminLawDocuments() {
                               }
                             />
                           </td>
-                          <td className="p-2 font-mono text-xs text-gray-700 whitespace-nowrap">{doc.so_hieu || "—"}</td>
+                          <td className="p-2 font-mono text-xs text-gray-700 whitespace-nowrap">
+                            {doc.so_hieu || "—"}
+                            {doc.is_imported && (
+                              <span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded">đã import</span>
+                            )}
+                          </td>
                           <td className="p-2 max-w-xs">
-                            <span className="line-clamp-2 text-gray-900">{doc.ten}</span>
+                            <span className={`line-clamp-2 ${doc.is_imported ? "text-gray-400" : "text-gray-900"}`}>{doc.ten}</span>
                           </td>
                           <td className="p-2">
                             <span className={`text-xs px-2 py-0.5 rounded font-medium ${LOAI_COLORS[doc.loai] || "bg-gray-100 text-gray-600"}`}>
-                              {doc.loai || "—"}
+                              {LOAI_LABELS[doc.loai] || doc.loai || "—"}
                             </span>
                           </td>
                           <td className="p-2">
@@ -696,7 +724,7 @@ export default function AdminLawDocuments() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className={`text-xs px-2 py-0.5 rounded font-medium ${LOAI_COLORS[previewDoc.loai] || "bg-gray-100 text-gray-600"}`}>
-                    {previewDoc.loai}
+                    {LOAI_LABELS[previewDoc.loai] || previewDoc.loai}
                   </span>
                   {previewDoc.so_hieu && (
                     <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">{previewDoc.so_hieu}</span>
@@ -764,10 +792,12 @@ export default function AdminLawDocuments() {
                     handleImport([previewDoc.id]);
                     closePreview();
                   }}
-                  disabled={importingId === previewDoc.id}
+                  disabled={importingId === previewDoc.id || !!previewDoc.is_imported}
                   className="px-4 py-2 bg-[#028a39] text-white rounded-lg text-sm font-medium hover:bg-[#026d2d] disabled:opacity-50 flex items-center gap-2"
                 >
-                  {importingId === previewDoc.id ? (
+                  {previewDoc.is_imported ? (
+                    <><CheckCircle size={14} /> Đã import</>
+                  ) : importingId === previewDoc.id ? (
                     <><Loader2 size={14} className="animate-spin" /> Đang import...</>
                   ) : (
                     <><Plus size={14} /> Import văn bản này</>
