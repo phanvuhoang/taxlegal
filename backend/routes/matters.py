@@ -1,7 +1,8 @@
 """
 Matters API — CRUD for client advisory requests.
 """
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+import logging
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from pydantic import BaseModel
@@ -10,6 +11,8 @@ from backend.database import get_db
 from backend.models import Matter, PipelineStep, ResearchChunk, User
 from backend.auth import get_current_user
 from backend.agents.pipeline import execute_pipeline_step
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/matters", tags=["matters"])
 
@@ -77,7 +80,6 @@ async def list_matters(
 @router.post("/")
 async def create_matter(
     req: CreateMatterRequest,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -96,12 +98,23 @@ async def create_matter(
     await db.commit()
     await db.refresh(matter)
 
-    # Auto-start step 1 (Intake) in background
-    background_tasks.add_task(
-        _run_step_bg, matter.id, 1, req.model_override
-    )
+    # Run step 1 (Intake) inline within the request context.
+    # Background tasks broke SQLAlchemy's greenlet bridge during multi-loop
+    # retrievals (step 4), so all step execution now runs inline.
+    step_status = "pending"
+    try:
+        step = await _run_pipeline_step_inline(db, matter.id, 1, req.model_override)
+        step_status = step.status
+    except Exception as e:
+        logger.error(f"Intake step failed for matter {matter.id}: {e}")
+        step_status = "failed"
 
-    return {"id": matter.id, "status": "intake_started", "message": "Matter created. Intake Enhancer đang chạy..."}
+    return {
+        "id": matter.id,
+        "status": "intake_started",
+        "step_status": step_status,
+        "message": f"Matter created. Step 1 finished with status: {step_status}",
+    }
 
 
 @router.get("/{matter_id}")
@@ -171,12 +184,11 @@ async def approve_step(
     matter_id: int,
     step_number: int,
     body: dict,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Approve a completed step and trigger the next one."""
-    matter = await _get_matter_or_404(db, matter_id, current_user)
+    """Approve a completed step and run the next one inline."""
+    await _get_matter_or_404(db, matter_id, current_user)
     notes = body.get("notes", "")
     model_override = body.get("model_override")
 
@@ -201,10 +213,22 @@ async def approve_step(
     await db.commit()
 
     next_step = step_number + 1
-    if next_step <= 7:
-        background_tasks.add_task(_run_step_bg, matter_id, next_step, model_override)
-        return {"message": f"Step {step_number} approved. Step {next_step} starting..."}
-    return {"message": "Pipeline completed!"}
+    if next_step > 7:
+        return {"message": "Pipeline completed!"}
+
+    next_status = "pending"
+    try:
+        next_step_obj = await _run_pipeline_step_inline(db, matter_id, next_step, model_override)
+        next_status = next_step_obj.status
+    except Exception as e:
+        logger.error(f"Step {next_step} failed for matter {matter_id}: {e}")
+        next_status = "failed"
+
+    return {
+        "message": f"Step {step_number} approved. Step {next_step} finished with status: {next_status}",
+        "next_step": next_step,
+        "next_status": next_status,
+    }
 
 
 @router.post("/{matter_id}/run-step/{step_number}")
@@ -212,15 +236,18 @@ async def run_step_manual(
     matter_id: int,
     step_number: int,
     body: dict,
-    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Manually trigger a specific step (admin/retry)."""
+    """Run a specific step synchronously within the request context (admin/retry)."""
     await _get_matter_or_404(db, matter_id, current_user)
     model_override = body.get("model_override")
-    background_tasks.add_task(_run_step_bg, matter_id, step_number, model_override)
-    return {"message": f"Step {step_number} triggered"}
+    try:
+        step = await _run_pipeline_step_inline(db, matter_id, step_number, model_override)
+    except Exception as e:
+        logger.error(f"Manual run of step {step_number} failed for matter {matter_id}: {e}")
+        return {"message": f"Step {step_number} failed", "status": "failed"}
+    return {"message": f"Step {step_number} completed", "status": step.status}
 
 
 @router.get("/{matter_id}/chunks")
@@ -292,25 +319,35 @@ async def _get_matter_or_404(db: AsyncSession, matter_id: int, user: User) -> Ma
     return matter
 
 
-async def _run_step_bg(matter_id: int, step_number: int, model_override: Optional[str] = None):
-    """Background task wrapper to run pipeline step with own DB session."""
-    from backend.database import AsyncSessionLocal
-    async with AsyncSessionLocal() as db:
-        try:
-            step = await execute_pipeline_step(db, matter_id, step_number, model_override)
+async def _run_pipeline_step_inline(
+    db: AsyncSession,
+    matter_id: int,
+    step_number: int,
+    model_override: Optional[str] = None,
+) -> PipelineStep:
+    """
+    Execute a pipeline step inline using the caller's DB session.
 
-            # Auto mode: if matter is auto and step completed (not final), approve and continue
-            matter_result = await db.execute(select(Matter).where(Matter.id == matter_id))
-            matter = matter_result.scalar_one_or_none()
-            if matter and matter.pipeline_mode == "auto" and step_number < 7 and step.status == "waiting":
-                await _auto_approve_and_continue(db, matter_id, step_number, model_override)
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Background step {step_number} failed: {e}")
+    Replaces the previous BackgroundTasks-based runner that created its own
+    AsyncSessionLocal. FastAPI background tasks broke SQLAlchemy's greenlet
+    bridge during long retrieval loops (step 4 / JA Research), surfacing as
+    `MissingGreenlet: greenlet_spawn has not been called`. Running inside the
+    request handler's session keeps the greenlet alive for the entire step.
+    """
+    step = await execute_pipeline_step(db, matter_id, step_number, model_override)
+
+    # Auto mode: if the step is waiting for approval (not final), auto-approve
+    # and continue to the next step within the same session.
+    matter_result = await db.execute(select(Matter).where(Matter.id == matter_id))
+    matter = matter_result.scalar_one_or_none()
+    if matter and matter.pipeline_mode == "auto" and step_number < 7 and step.status == "waiting":
+        await _auto_approve_and_continue(db, matter_id, step_number, model_override)
+
+    return step
 
 
 async def _auto_approve_and_continue(db, matter_id, step_number, model_override):
-    """Auto approve and trigger next step."""
+    """Auto approve current step and run the next one inline."""
     from datetime import datetime
     step_result = await db.execute(
         select(PipelineStep).where(
